@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+
+MODE="fix"
+
+for argument in "$@"; do
+    case "$argument" in
+        --check|--dry-run)
+            MODE="check"
+            ;;
+        -h|--help)
+            printf 'Usage: bin/cs [--check|--dry-run]\n'
+            exit 0
+            ;;
+        *)
+            printf 'Option inconnue : %s\n' "$argument" >&2
+            exit 2
+            ;;
+    esac
+done
+
+if [ "$MODE" = "check" ]; then
+    exec php vendor/bin/php-cs-fixer check --diff --no-interaction
+fi
+
+exec php vendor/bin/php-cs-fixer fix --no-interaction

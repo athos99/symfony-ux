@@ -1,0 +1,9 @@
+- Le site web est un site web qui est accessible à travers internet.
+- Le nom du site qui apparait sur le signet du site est "symfony base"
+- le site a un favicon, il doit être le même que public/favicon.png
+- le site doit fonctionner avec php 8.4 ou suppérieur
+- la version de symfony doit être 8.1 ou supérieur
+- le site doit être accessible à travers le port 80
+- le framwork pur les css est tailwindcss
+- les assets sont gérés par Symfony Reprise + Vite
+- le code local par défuat doit etre `fr_CH`

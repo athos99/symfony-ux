@@ -1,0 +1,30 @@
+{
+    "name": "symfony-ux",
+    "version": "1.0.0",
+    "type": "module",
+    "repository": "https://github.com/athos99/symfony_ux.git",
+    "author": "athos99 <ahtos99@bluewin.ch>",
+    "license": "MIT",
+    "devDependencies": {
+        "@axe-core/playwright": "^4.11.0",
+        "@biomejs/biome": "2.6.8",
+        "@hotwired/stimulus": "^3.0.0",
+        "@hotwired/turbo": "^7.1.0 || ^8.0",
+        "@symfony/reprise": "^1.4.0",
+        "@symfony/ux-turbo": "file:vendor/symfony/ux-turbo/assets",
+        "@tailwindcss/vite": "^4.3.5",
+        "daisyui": "^5.8.2",
+        "playwright": "^1.65.1",
+        "tailwindcss": "^4.3.5",
+        "vite": "^8.3.8"
+    },
+    "scripts": {
+        "dev": "vite",
+        "build": "vite build",
+        "smoke": "node tests/browser/smoke.js",
+        "lint": "biome lint ./assets ./tests/browser ./vite.config.js",
+        "format": "biome format --write ./assets ./tests/browser ./vite.config.js",
+        "biome:check": "biome check ./assets ./tests/browser ./vite.config.js",
+        "biome:fix": "biome check --write ./assets ./tests/browser ./vite.config.js"
+    }
+}

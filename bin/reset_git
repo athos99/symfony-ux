@@ -1,0 +1,15 @@
+#!/usr/bin/env sh
+# Créer une nouvelle branche sans historique
+git checkout --orphan nouvelle-histoire
+
+# Ajouter tous les fichiers
+git add -A
+
+# Créer le commit unique
+git commit -m "Initial commit"
+
+# Supprimer l'ancienne branche
+git branch -D main
+
+# Renommer la nouvelle branche
+git branch -m main

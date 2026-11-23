@@ -1,0 +1,21 @@
+# config/packages/response_headers.yaml
+# https://github.com/republique-et-canton-de-geneve/response-headers-bundle/blob/main/config.md
+
+response_headers:
+    headers:
+        Cache-Control: max-age=0, must-revalidate, no-cache, no-store, private"
+        Referrer-Policy: strict-origin
+        X-Content-Type-Options: nosniff
+        X-XSS-Protection: 1; mode=block
+        Content-Security-Policy:
+            - "default-src 'none';"
+            - "script-src 'self' data: 'unsafe-inline' 'unsafe-hashes' 'unsafe-eval' http://localhost:5173;"
+            - "script-src-elem 'self' data: 'unsafe-inline' 'unsafe-hashes' 'unsafe-eval' http://localhost:5173;"
+            - "style-src 'self' 'unsafe-inline'  http://localhost:5173 fonts.googleapis.com;"
+            - "font-src fonts.gstatic.com;"
+            - "img-src 'self' data: localhost;"
+            - "connect-src 'self';"
+
+        X-Frame-Options:
+            value: SAMEORIGIN
+            replace: false

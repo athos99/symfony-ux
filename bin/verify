@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+
+MODE="full"
+CHECK_DB="no"
+CHECK_BROWSER="no"
+CHECK_COVERAGE="no"
+
+for argument in "$@"; do
+    case "$argument" in
+        --fast)
+            MODE="fast"
+            ;;
+        --with-db)
+            CHECK_DB="yes"
+            ;;
+        --skip-db)
+            CHECK_DB="no"
+            ;;
+        --with-browser)
+            CHECK_BROWSER="yes"
+            ;;
+        --with-coverage)
+            CHECK_COVERAGE="yes"
+            ;;
+        -h|--help)
+            printf 'Usage: bin/verify [--fast] [--with-db|--skip-db] [--with-browser] [--with-coverage]\n'
+            exit 0
+            ;;
+        *)
+            printf 'Option inconnue : %s\n' "$argument" >&2
+            exit 2
+            ;;
+    esac
+done
+
+run_step() {
+    local label="$1"
+    shift
+    printf '\n== %s ==\n' "$label"
+    "$@"
+}
+
+if [ "$MODE" != "fast" ]; then
+    run_step "Composer" composer validate --strict --no-check-publish
+    run_step "Composer audit" composer audit --no-interaction --locked
+    run_step "Composer plateforme" composer check-platform-reqs --no-interaction
+    run_step "Yarn audit" yarn audit
+    run_step "Git diff" git diff --check
+    run_step "Git diff staged" git diff --cached --check
+    printf '\n== Composer outdated (non bloquant) ==\n'
+    composer outdated --direct --no-interaction || printf 'ATTENTION : des dépendances directes sont en retard de version.\n' >&2
+fi
+
+run_step "Symfony container" php bin/console lint:container --resolve-env-vars
+run_step "YAML" php bin/console lint:yaml config/ --parse-tags
+run_step "Twig" php bin/console lint:twig templates
+run_step "Translations" php bin/console lint:translations --locale=fr
+run_step "XLIFF" php bin/console lint:xliff translations/
+run_step "Biome" yarn biome:check
+run_step "PHP CS Fixer" php vendor/bin/php-cs-fixer check --diff --no-interaction
+run_step "PHPStan" php vendor/bin/phpstan analyse --no-progress --memory-limit=1G
+run_step "Rector" php vendor/bin/rector process --dry-run --no-progress-bar
+
+if [ "$CHECK_DB" = "yes" ]; then
+    run_step "Doctrine" php bin/console doctrine:schema:validate
+elif [ "$MODE" != "fast" ]; then
+    if php bin/console dbal:run-sql 'SELECT 1' >/dev/null 2>&1; then
+        run_step "Doctrine" php bin/console doctrine:schema:validate
+    else
+        printf '\nATTENTION : PostgreSQL est injoignable, validation Doctrine ignorée.\n' >&2
+    fi
+fi
+
+if [ "$MODE" != "fast" ]; then
+    run_step "Assets" yarn build
+fi
+
+if [ "$CHECK_COVERAGE" = "yes" ]; then
+    run_step "PHPUnit couverture" env XDEBUG_MODE=coverage php bin/phpunit --coverage-text --coverage-html=var/coverage
+else
+    run_step "PHPUnit" php bin/phpunit
+fi
+
+run_step "Behat" php vendor/bin/behat --no-colors --format=progress
+
+if [ "$CHECK_BROWSER" = "yes" ]; then
+    run_step "Playwright smoke test" yarn smoke
+fi
+
+printf '\nHarnais de vérification réussi.\n'

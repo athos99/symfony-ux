@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="{{ app.request.locale|replace({'_': '-'}) }}">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>{% block title %}symfony base{% endblock %}</title>
+        <link rel="icon" type="image/png" href="{{ asset('favicon.png') }}">
+        {% block stylesheets %}
+            {{ reprise_entry_link_tags('app') }}
+        {% endblock %}
+
+        {% block javascripts %}
+            {{ reprise_entry_script_tags('app') }}
+        {% endblock %}
+
+       
+    </head>
+    <body class="min-h-screen bg-base-100">
+        {% block body %}{% endblock %}
+    </body>
+</html>
