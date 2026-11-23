@@ -1,6 +1,6 @@
 ---
-
-## description: Exécuter le harnais de vérification Symfony
+description: Exécuter le harnais de vérification Symfony
+---
 
 Exécute le harnais de vérification dans le conteneur `php85` :
 
