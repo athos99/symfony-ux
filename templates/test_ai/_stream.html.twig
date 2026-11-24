@@ -1,0 +1,19 @@
+{#
+    Fragments Turbo Stream poussés par le serveur SSE.
+
+    - « update » : remplace le contenu de #ai-output par le texte cumulé de la
+      réponse. #ai-output est la cible Turbo (zone de rendu), que le contrôleur
+      Stimulus recopie en direct dans le textarea du terminal.
+    - « end » : retire le curseur de saisie et signale la fin du streaming.
+#}
+{% block update %}
+    <turbo-stream action="update" target="ai-output">
+        <template>{{ text }}</template>
+    </turbo-stream>
+{% endblock %}
+
+{% block end %}
+    <turbo-stream action="update" target="ai-status">
+        <template>Terminé.</template>
+    </turbo-stream>
+{% endblock %}

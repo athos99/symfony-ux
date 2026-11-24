@@ -1,0 +1,52 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Test IA · symfony base{% endblock %}
+
+{% block body %}
+    <main class="mx-auto max-w-3xl p-6">
+        <h1 class="mb-2 text-2xl font-bold">Test IA — terminal de chat</h1>
+        <p class="mb-6 text-sm opacity-70">
+            Démonstration Symfony UX : la réponse du modèle s'affiche au fil de l'eau
+            via Turbo Streams et Server-Sent Events.
+        </p>
+
+        {#
+            Le contrôleur Stimulus « test-ai » gère :
+              - l'envoi du formulaire (fetch vers l'endpoint SSE) ;
+              - la lecture du flux SSE et sa conversion en Turbo Streams ;
+              - l'affichage de la demande et de la réponse dans le textarea.
+        #}
+        <div
+            data-controller="test-ai"
+            data-test-ai-stream-url-value="{{ path('app_test_ai_stream') }}"
+        >
+            <label for="ai-terminal" class="sr-only">Terminal de chat</label>
+            <textarea
+                id="ai-terminal"
+                data-test-ai-target="terminal"
+                class="textarea textarea-bordered min-h-80 w-full font-mono text-sm"
+                placeholder="Écrivez votre demande puis cliquez sur « Envoyer »…"
+                aria-live="polite"
+            ></textarea>
+
+            <div class="mt-4 flex items-center gap-3">
+                <button
+                    type="button"
+                    class="btn btn-primary"
+                    data-test-ai-target="submit"
+                    data-action="click->test-ai#send"
+                >Envoyer</button>
+                <button
+                    type="button"
+                    class="btn btn-ghost"
+                    data-action="click->test-ai#reset"
+                >Effacer</button>
+                <span id="ai-status" class="text-xs opacity-60" data-test-ai-target="status"></span>
+            </div>
+
+            {# Cible Turbo : le serveur y pousse le texte cumulé de la réponse.
+               Le contrôleur Stimulus recopie ce contenu dans le textarea. #}
+            <div id="ai-output" hidden></div>
+        </div>
+    </main>
+{% endblock %}

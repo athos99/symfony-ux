@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=../vendor/symfony/dependency-injection/Loader/schema/services.schema.json
+
+# Surchapes de services pour l'environnement de test uniquement.
+# On remplace l'agent IA par un double déterministe (aucun appel réseau) afin de
+# tester le streaming de façon reproductible.
+services:
+    ai.agent.default:
+        class: App\Tests\Mock\StreamingAgent
+        public: true

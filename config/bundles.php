@@ -15,4 +15,5 @@ return [
     Symfony\Bundle\MakerBundle\MakerBundle::class => ['dev' => true],
     Symfony\Reprise\RepriseBundle::class => ['all' => true],
     EtatGeneve\ResponseHeadersBundle\ResponseHeadersBundle::class => ['all' => true],
+    Symfony\AI\AiBundle\AiBundle::class => ['all' => true],
 ];
