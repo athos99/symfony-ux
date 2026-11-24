@@ -1,6 +1,31 @@
 import { Controller } from '@hotwired/stimulus';
 import { renderStreamMessage } from '@hotwired/turbo';
 
+// Afficheur 7 segments (style LED années 70) : segments actifs par chiffre.
+const SEGMENTS = {
+    0: ['a', 'b', 'c', 'd', 'e', 'f'],
+    1: ['b', 'c'],
+    2: ['a', 'b', 'g', 'e', 'd'],
+    3: ['a', 'b', 'g', 'c', 'd'],
+    4: ['f', 'g', 'b', 'c'],
+    5: ['a', 'f', 'g', 'c', 'd'],
+    6: ['a', 'f', 'g', 'e', 'c', 'd'],
+    7: ['a', 'b', 'c'],
+    8: ['a', 'b', 'c', 'd', 'e', 'f', 'g'],
+    9: ['a', 'b', 'c', 'd', 'f', 'g'],
+};
+const ALL_SEGMENTS = ['a', 'b', 'c', 'd', 'e', 'f', 'g'];
+// Coordonnées [x1, y1, x2, y2] de chaque segment (viewBox 0 0 10 18).
+const SEGMENT_COORDS = {
+    a: [1.5, 1, 8.5, 1],
+    b: [9, 1.5, 9, 8],
+    c: [9, 10, 9, 16.5],
+    d: [1.5, 17, 8.5, 17],
+    e: [1, 10, 1, 16.5],
+    f: [1, 1.5, 1, 8],
+    g: [1.5, 9, 8.5, 9],
+};
+
 /**
  * Contrôleur Stimulus du terminal de chat IA.
  *
@@ -16,7 +41,16 @@ import { renderStreamMessage } from '@hotwired/turbo';
  * JSON (la demande) via POST.
  */
 export default class extends Controller {
-    static targets = ['terminal', 'submit', 'status', 'eye', 'mirror'];
+    static targets = [
+        'terminal',
+        'submit',
+        'status',
+        'eye',
+        'mirror',
+        'temperature',
+        'temperatureValue',
+        'words',
+    ];
     static values = { streamUrl: String };
 
     connect() {
@@ -31,16 +65,21 @@ export default class extends Controller {
         // Plages [start, end] du texte de l'IA, pour colorer le miroir en ambre.
         this.aiRanges = [];
         this.currentRange = null;
+        // Mots de la dernière demande (pour l'animation « délirante » de l'œil).
+        this.lastRequest = '';
+        this.wordTimer = null;
         this.boundInput = () => this.handleTyping();
         this.boundScroll = () => this.syncMirrorScroll();
         this.setEyeState('idle');
         this.terminalTarget.addEventListener('input', this.boundInput);
         this.terminalTarget.addEventListener('scroll', this.boundScroll);
         this.renderMirror();
+        this.renderTemperatureDisplay(this.temperatureTarget?.value ?? '0.7');
     }
 
     disconnect() {
         this.cancel();
+        this.stopWords();
         this.terminalTarget.removeEventListener('input', this.boundInput);
         this.terminalTarget.removeEventListener('scroll', this.boundScroll);
         if (this.typingTimeout) {
@@ -65,11 +104,129 @@ export default class extends Controller {
     }
 
     /**
+     * Met à jour l'affichage 7 segments de la température quand on déplace la
+     * commande.
+     */
+    updateTemperature() {
+        if (this.hasTemperatureTarget) {
+            this.renderTemperatureDisplay(this.temperatureTarget.value);
+        }
+    }
+
+    /**
+     * Dessine la température en afficheur 7 segments (style LED des années 70).
+     */
+    renderTemperatureDisplay(value) {
+        if (!this.hasTemperatureValueTarget) {
+            return;
+        }
+        const text = Number.parseFloat(value).toFixed(1);
+        let html = '';
+        for (const char of text) {
+            if (char === '.') {
+                html += '<span class="hal-seg__dot"></span>';
+                continue;
+            }
+            const active = SEGMENTS[char] ?? [];
+            const lines = ALL_SEGMENTS.map((segment) => {
+                const [x1, y1, x2, y2] = SEGMENT_COORDS[segment];
+                const state = active.includes(segment) ? 'on' : 'off';
+                return `<line class="${state}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" />`;
+            }).join('');
+            html += `<svg class="hal-seg__digit" viewBox="0 0 10 18" aria-hidden="true">${lines}</svg>`;
+        }
+        this.temperatureValueTarget.innerHTML = html;
+        this.temperatureValueTarget.setAttribute(
+            'aria-label',
+            `Température ${text}`,
+        );
+    }
+
+    /**
      * Pilote l'état visuel de l'œil de HAL (idle / typing / thinking / error).
      */
     setEyeState(state) {
         if (this.hasEyeTarget) {
             this.eyeTarget.dataset.state = state;
+        }
+        // Pendant la « réflexion », les mots de la demande flottent dans l'œil.
+        if (state === 'thinking') {
+            this.startWords();
+        } else {
+            this.stopWords();
+        }
+    }
+
+    /**
+     * Lance l'animation des mots flottants dans l'œil (état « thinking »).
+     */
+    startWords() {
+        if (!this.hasWordsTarget || this.wordTimer) {
+            return;
+        }
+        this.wordsTarget.innerHTML = '';
+        this.spawnWord();
+        this.wordTimer = setInterval(() => this.spawnWord(), 240);
+    }
+
+    /**
+     * Arrête et vide l'animation des mots flottants.
+     */
+    stopWords() {
+        if (this.wordTimer) {
+            clearInterval(this.wordTimer);
+            this.wordTimer = null;
+        }
+        if (this.hasWordsTarget) {
+            this.wordsTarget.innerHTML = '';
+        }
+    }
+
+    /**
+     * Fait apparaître un mot au hasard dans l'œil, avec une trajectoire et une
+     * durée aléatoires (chevauchement, croisement, disparition).
+     */
+    spawnWord() {
+        if (!this.hasWordsTarget) {
+            return;
+        }
+        const words = (this.lastRequest || '').split(/\s+/).filter(Boolean);
+        if (0 === words.length) {
+            return;
+        }
+
+        const word = words[Math.floor(Math.random() * words.length)];
+        const span = document.createElement('span');
+        span.className = 'hal-word';
+        span.textContent = word;
+
+        const angle = Math.random() * Math.PI * 2;
+        const distance = 30 + Math.random() * 70;
+        span.style.left = `${10 + Math.random() * 80}%`;
+        span.style.top = `${10 + Math.random() * 80}%`;
+        span.style.setProperty('--dx', `${Math.cos(angle) * distance}px`);
+        span.style.setProperty('--dy', `${Math.sin(angle) * distance}px`);
+        span.style.setProperty(
+            '--rot',
+            `${Math.round(Math.random() * 60 - 30)}deg`,
+        );
+        span.style.setProperty(
+            '--dur',
+            `${(1.6 + Math.random() * 2).toFixed(2)}s`,
+        );
+        span.style.setProperty(
+            '--size',
+            `${(0.9 + Math.random() * 0.9).toFixed(2)}rem`,
+        );
+        span.style.color =
+            Math.random() > 0.5 ? 'var(--hal-red-soft)' : '#ffd0c8';
+
+        span.addEventListener('animationend', () => span.remove());
+        this.wordsTarget.appendChild(span);
+
+        // Limite le nombre d'éléments simultanés.
+        while (this.wordsTarget.children.length > 36) {
+            this.wordsTarget.firstElementChild?.remove();
         }
     }
 
@@ -83,6 +240,7 @@ export default class extends Controller {
         if (!request || this.isStreaming) {
             return;
         }
+        this.lastRequest = request;
 
         // On conserve tout le texte existant (jamais effacé) et on ajoute la
         // nouvelle demande, suivie d'une séparation.
@@ -105,6 +263,11 @@ export default class extends Controller {
         this.isStreaming = true;
         this.submitTarget.disabled = true;
 
+        // Température choisie sur le panneau (0.0 → 2.0).
+        const temperature = this.hasTemperatureTarget
+            ? Number.parseFloat(this.temperatureTarget.value)
+            : 0.7;
+
         this.abortController = new AbortController();
 
         try {
@@ -114,7 +277,7 @@ export default class extends Controller {
                     'Content-Type': 'application/json',
                     Accept: 'text/event-stream',
                 },
-                body: JSON.stringify({ message: request }),
+                body: JSON.stringify({ message: request, temperature }),
                 signal: this.abortController.signal,
             });
 

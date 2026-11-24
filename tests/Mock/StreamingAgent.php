@@ -19,8 +19,25 @@ use Symfony\AI\Platform\Result\TextResult;
  */
 final class StreamingAgent implements AgentInterface
 {
+    /**
+     * Dernières options reçues par le faux agent (pour les assertions de test).
+     *
+     * @var array<string, mixed>
+     */
+    public static array $lastOptions = [];
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function lastOptions(): array
+    {
+        return self::$lastOptions;
+    }
+
     public function call(string|MessageBag|UserMessage $input, array $options = []): Execution
     {
+        self::$lastOptions = $options;
+
         // Fragments renvoyés « au fil de l'eau » par le faux modèle.
         $fragments = ['Bon', 'jour', ', ', 'monde', ' !'];
 

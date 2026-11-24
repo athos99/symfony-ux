@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Tests\Controller;
 
+use App\Tests\Mock\StreamingAgent;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\HttpFoundation\Request;
 
 final class TestAiControllerTest extends WebTestCase
 {
@@ -40,13 +42,63 @@ final class TestAiControllerTest extends WebTestCase
         self::assertSelectorExists('#ai-status[data-test-ai-target="status"]');
     }
 
+    public function testPageRendersTemperatureCommand(): void
+    {
+        $client = self::createClient();
+        $client->request('GET', '/test_ai');
+
+        // La commande de température est un curseur borné [0, 2] avec sa valeur.
+        self::assertSelectorExists(
+            'input[data-test-ai-target="temperature"][type="range"][min="0"][max="2"]',
+        );
+        self::assertSelectorExists('output[data-test-ai-target="temperatureValue"]');
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('temperatureProvider')]
+    public function testStreamEndpointForwardsBoundedTemperature(float $input, float $expected): void
+    {
+        StreamingAgent::$lastOptions = [];
+
+        $kernel = self::bootKernel();
+        $request = Request::create(
+            '/test_ai/stream',
+            'POST',
+            [],
+            [],
+            [],
+            ['CONTENT_TYPE' => 'application/json'],
+            (string) json_encode(['message' => 'Bonjour', 'temperature' => $input]),
+        );
+
+        $response = $kernel->handle($request);
+        self::assertStringStartsWith('text/event-stream', (string) $response->headers->get('Content-Type'));
+
+        ob_start();
+        $response->sendContent();
+        ob_end_clean();
+
+        $options = StreamingAgent::lastOptions();
+        self::assertArrayHasKey('temperature', $options);
+        self::assertSame($expected, $options['temperature']);
+    }
+
+    /**
+     * @return iterable<string, array{0: float, 1: float}>
+     */
+    public static function temperatureProvider(): iterable
+    {
+        yield 'valeur normale' => [1.3, 1.3];
+        yield 'borne haute dépassée' => [5.0, 2.0];
+        yield 'borne basse dépassée' => [-1.0, 0.0];
+    }
+
     public function testStreamEndpointReturnsServerSentEvents(): void
     {
         // EventStreamResponse est une StreamedResponse que le client WebTestCase ne
         // tamponne pas : on gère la requête directement via le noyau pour capturer
         // le corps généré par le callback de streaming.
         $kernel = self::bootKernel();
-        $request = \Symfony\Component\HttpFoundation\Request::create(
+        $request = Request::create(
             '/test_ai/stream',
             'POST',
             [],

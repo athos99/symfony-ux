@@ -59,13 +59,16 @@ final class TestAiController extends AbstractController
         // avec repli sur un champ de formulaire classique.
         $message = $this->extractMessage($request);
 
+        // Température du modèle (0.0 → 2.0), bornée côté serveur.
+        $temperature = $this->extractTemperature($request);
+
         // On neutralise la session le temps du streaming (voir docblock).
         $actualSession = $request->getSession();
         $request->setSession(new \Symfony\Component\HttpFoundation\Session\Session(
             new \Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage(),
         ));
 
-        return new EventStreamResponse(function () use ($request, $actualSession, $default, $message) {
+        return new EventStreamResponse(function () use ($request, $actualSession, $default, $message, $temperature) {
             // On restaure la vraie session à l'intérieur du générateur, une fois
             // la réponse partie.
             $request->setSession($actualSession);
@@ -80,9 +83,14 @@ final class TestAiController extends AbstractController
             // Appel de l'agent en mode streamé : l'Execution est paresseuse,
             // les fragments arrivent au fur et à mesure. On plafonne max_tokens
             // pour rester dans un budget raisonnable et éviter les erreurs 402
-            // des plateformes à crédits limités.
+            // des plateformes à crédits limités. La température est transmise
+            // telle quelle au modèle (option standard de Symfony AI).
             try {
-                $execution = $default->call($messages, ['stream' => true, 'max_tokens' => 1024]);
+                $execution = $default->call($messages, [
+                    'stream' => true,
+                    'max_tokens' => 1024,
+                    'temperature' => $temperature,
+                ]);
 
                 $accumulated = '';
                 foreach ($execution->asStream() as $delta) {
@@ -138,5 +146,28 @@ final class TestAiController extends AbstractController
         }
 
         return trim((string) $request->request->get('message', ''));
+    }
+
+    /**
+     * Extrait la température demandée (corps JSON ou champ de formulaire),
+     * bornée à l'intervalle [0.0, 2.0] avec une valeur par défaut de 0.7.
+     */
+    private function extractTemperature(Request $request): float
+    {
+        $temperature = 0.7;
+
+        $content = $request->getContent();
+        if ('' !== $content) {
+            $data = json_decode($content, true);
+            if (\is_array($data) && isset($data['temperature']) && is_numeric($data['temperature'])) {
+                $temperature = (float) $data['temperature'];
+            }
+        }
+
+        if (0.7 === $temperature && $request->request->has('temperature')) {
+            $temperature = (float) $request->request->get('temperature');
+        }
+
+        return max(0.0, min(2.0, $temperature));
     }
 }
