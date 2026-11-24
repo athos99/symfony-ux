@@ -2,51 +2,163 @@
 
 {% block title %}Test IA · symfony base{% endblock %}
 
+{% block stylesheets %}
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Share+Tech+Mono&display=swap"
+        rel="stylesheet"
+    >
+    {{ reprise_entry_link_tags('app') }}
+{% endblock %}
+
 {% block body %}
-    <main class="mx-auto max-w-3xl p-6">
-        <h1 class="mb-2 text-2xl font-bold">Test IA — terminal de chat</h1>
-        <p class="mb-6 text-sm opacity-70">
-            Démonstration Symfony UX : la réponse du modèle s'affiche au fil de l'eau
-            via Turbo Streams et Server-Sent Events.
-        </p>
+    {#
+        Console HAL 9000 — thème « 2001, l'Odyssée de l'espace » / tableau de bord Apollo 11.
+        Le contrôleur Stimulus « test-ai » gère l'envoi, le flux SSE et l'œil rouge
+        (états idle / typing / thinking / error portés par data-state).
+    #}
+    <div
+        class="hal-console"
+        data-controller="test-ai"
+        data-test-ai-stream-url-value="{{ path('app_test_ai_stream') }}"
+    >
+        <div class="hal-console__stars" aria-hidden="true"></div>
+        <div class="hal-console__grid-bg" aria-hidden="true"></div>
+        <div class="hal-console__scanlines" aria-hidden="true"></div>
 
-        {#
-            Le contrôleur Stimulus « test-ai » gère :
-              - l'envoi du formulaire (fetch vers l'endpoint SSE) ;
-              - la lecture du flux SSE et sa conversion en Turbo Streams ;
-              - l'affichage de la demande et de la réponse dans le textarea.
-        #}
-        <div
-            data-controller="test-ai"
-            data-test-ai-stream-url-value="{{ path('app_test_ai_stream') }}"
-        >
-            <label for="ai-terminal" class="sr-only">Terminal de chat</label>
-            <textarea
-                id="ai-terminal"
-                data-test-ai-target="terminal"
-                class="textarea textarea-bordered min-h-80 w-full font-mono text-sm"
-                placeholder="Écrivez votre demande puis cliquez sur « Envoyer »…"
-                aria-live="polite"
-            ></textarea>
+        <div class="hal-console__frame">
+            <header class="hal-header">
+                <div class="hal-header__brand">
+                    <span class="hal-led" aria-hidden="true"></span>
+                    <h1 class="hal-header__title">HAL <span>9000</span></h1>
+                </div>
+                <p class="hal-header__sub">
+                    Heuristically programmed ALgorithmic computer — Mission Apollo 11
+                </p>
+                <ul class="hal-header__meta" aria-hidden="true">
+                    <li class="hal-chip">DSKY</li>
+                    <li class="hal-chip">GUIDANCE</li>
+                    <li class="hal-chip">TELEMETRY</li>
+                    <li class="hal-chip">LUNAR EAGLE</li>
+                </ul>
+            </header>
 
-            <div class="mt-4 flex items-center gap-3">
-                <button
-                    type="button"
-                    class="btn btn-primary"
-                    data-test-ai-target="submit"
-                    data-action="click->test-ai#send"
-                >Envoyer</button>
-                <button
-                    type="button"
-                    class="btn btn-ghost"
-                    data-action="click->test-ai#reset"
-                >Effacer</button>
-                <span id="ai-status" class="text-xs opacity-60" data-test-ai-target="status"></span>
+            <div class="hal-caution" aria-hidden="true">
+                <span class="hal-caution__label">CAUTION &amp; WARNING</span>
+                <span class="hal-lamp hal-lamp--amber"></span>
+                <span class="hal-lamp hal-lamp--amber"></span>
+                <span class="hal-lamp hal-lamp--red"></span>
+                <span class="hal-lamp hal-lamp--green"></span>
+                <span class="hal-lamp hal-lamp--green"></span>
+                <span class="hal-lamp hal-lamp--blue"></span>
+                <span class="hal-caution__state">NORMAL</span>
             </div>
 
-            {# Cible Turbo : le serveur y pousse le texte cumulé de la réponse.
-               Le contrôleur Stimulus recopie ce contenu dans le textarea. #}
-            <div id="ai-output" hidden></div>
+            <div class="hal-console__grid">
+                <aside class="hal-panel hal-eyepanel" aria-label="Pupitre de HAL 9000">
+                    <p class="hal-eyepanel__label">OPTICAL SENSOR · HAL 9000</p>
+
+                    <div class="hal-zone hal-zone--eye">
+                        <div
+                            class="hal-eye"
+                            data-test-ai-target="eye"
+                            data-state="idle"
+                            role="img"
+                            aria-label="Œil rouge de HAL 9000"
+                        >
+                            <div class="hal-eye__barrel">
+                                <div class="hal-eye__iris">
+                                    <span class="hal-eye__sweep" aria-hidden="true"></span>
+                                    <span class="hal-eye__pupil" aria-hidden="true"></span>
+                                    <span class="hal-eye__glint" aria-hidden="true"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="hal-zone">
+                        <p
+                            id="ai-status"
+                            class="hal-readout"
+                            data-test-ai-target="status"
+                            aria-live="polite"
+                        >EN ATTENTE</p>
+                    </div>
+
+                    <dl class="hal-telemetry">
+                        <div class="hal-gauge">
+                            <dt>CPU</dt>
+                            <dd><span class="hal-gauge__bar"><span class="hal-gauge__fill" style="--level: 64%"></span></span></dd>
+                        </div>
+                        <div class="hal-gauge">
+                            <dt>MEMORY</dt>
+                            <dd><span class="hal-gauge__bar"><span class="hal-gauge__fill" style="--level: 82%"></span></span></dd>
+                        </div>
+                        <div class="hal-gauge">
+                            <dt>SIGNAL</dt>
+                            <dd><span class="hal-gauge__bar"><span class="hal-gauge__fill" style="--level: 91%"></span></span></dd>
+                        </div>
+                        <div class="hal-gauge">
+                            <dt>O₂</dt>
+                            <dd><span class="hal-gauge__bar"><span class="hal-gauge__fill" style="--level: 97%"></span></span></dd>
+                        </div>
+                    </dl>
+
+                    <div class="hal-switches" aria-hidden="true">
+                        <span class="hal-switch"></span>
+                        <span class="hal-switch"></span>
+                        <span class="hal-switch"></span>
+                        <span class="hal-switch"></span>
+                    </div>
+                </aside>
+
+                <section class="hal-panel hal-terminalpanel" aria-label="Terminal de chat">
+                    <div class="hal-terminal">
+                        <div class="hal-terminal__bar">
+                            <span class="hal-terminal__title">TERMINAL 01</span>
+                            <span class="hal-terminal__dots" aria-hidden="true">
+                                <i></i><i></i><i></i>
+                            </span>
+                        </div>
+
+                        <label for="ai-terminal" class="sr-only">Terminal de chat</label>
+                        <textarea
+                            id="ai-terminal"
+                            data-test-ai-target="terminal"
+                            class="hal-terminal__screen"
+                            placeholder="> Écrivez votre demande puis cliquez sur « Envoyer »…"
+                            aria-live="polite"
+                            spellcheck="false"
+                        ></textarea>
+
+                        <div class="hal-terminal__actions">
+                            <button
+                                type="button"
+                                class="hal-btn hal-btn--primary"
+                                data-test-ai-target="submit"
+                                data-action="click->test-ai#send"
+                            >Envoyer</button>
+                            <button
+                                type="button"
+                                class="hal-btn hal-btn--ghost"
+                                data-action="click->test-ai#reset"
+                            >Effacer</button>
+                            <span class="hal-terminal__hint" aria-hidden="true">F1 · HELP</span>
+                        </div>
+                    </div>
+
+                    {# Cible Turbo : le serveur y pousse le texte cumulé de la réponse. #}
+                    <div id="ai-output" hidden></div>
+                </section>
+            </div>
+
+            <footer class="hal-footer" aria-hidden="true">
+                <span class="hal-footer__item"><i class="hal-led"></i> SYS OK</span>
+                <span class="hal-footer__item">SECTOR 21</span>
+                <span class="hal-footer__item">UPLINK 1.2 kB/s</span>
+                <span class="hal-footer__item hal-footer__item--right">EST. 1968 · 9000 SERIES</span>
+            </footer>
         </div>
-    </main>
+    </div>
 {% endblock %}

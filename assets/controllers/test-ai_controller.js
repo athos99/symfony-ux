@@ -16,29 +16,78 @@ import { renderStreamMessage } from '@hotwired/turbo';
  * JSON (la demande) via POST.
  */
 export default class extends Controller {
-    static targets = ['terminal', 'submit', 'status'];
+    static targets = ['terminal', 'submit', 'status', 'eye'];
     static values = { streamUrl: String };
 
     connect() {
         this.abortController = null;
+        this.typingTimeout = null;
+        // Longueur du transcript déjà « validé » (demandes + réponses rendues).
+        // La nouvelle demande est tout ce qui est saisi au-delà de cette longueur.
+        this.committedLength = 0;
+        // Nombre de caractères de la réponse en cours déjà recopiés dans le
+        // textarea (le serveur pousse un texte cumulé : on n'ajoute que le delta).
+        this.answerLength = 0;
+        this.boundInput = () => this.handleTyping();
+        this.setEyeState('idle');
+        this.terminalTarget.addEventListener('input', this.boundInput);
     }
 
     disconnect() {
         this.cancel();
+        this.terminalTarget.removeEventListener('input', this.boundInput);
+        if (this.typingTimeout) {
+            clearTimeout(this.typingTimeout);
+        }
+    }
+
+    /**
+     * Réaction de l'œil à la frappe : passe en « typing » puis revient au repos.
+     */
+    handleTyping() {
+        if (this.isStreaming) {
+            return;
+        }
+        this.setEyeState('typing');
+        if (this.typingTimeout) {
+            clearTimeout(this.typingTimeout);
+        }
+        this.typingTimeout = setTimeout(() => this.setEyeState('idle'), 700);
+    }
+
+    /**
+     * Pilote l'état visuel de l'œil de HAL (idle / typing / thinking / error).
+     */
+    setEyeState(state) {
+        if (this.hasEyeTarget) {
+            this.eyeTarget.dataset.state = state;
+        }
     }
 
     /**
      * Envoi de la demande et ouverture du flux SSE.
      */
     async send() {
-        const request = this.terminalTarget.value.trim();
+        // La demande est la portion saisie au-delà du transcript déjà validé.
+        const full = this.terminalTarget.value;
+        const request = full.slice(this.committedLength).trim();
         if (!request || this.isStreaming) {
             return;
         }
 
-        // On affiche la demande dans le terminal, suivie d'un retour à la ligne.
-        this.terminalTarget.value = `${request}\n\n`;
+        // On conserve tout le texte existant (jamais effacé) et on ajoute la
+        // nouvelle demande, suivie d'une séparation.
+        const base = full.replace(/\s+$/, '');
+        this.terminalTarget.value = base ? `${base}\n\n` : '';
+        this.answerLength = 0;
+
+        const output = document.getElementById('ai-output');
+        if (output) {
+            output.textContent = '';
+        }
+
         this.setStatus('Génération…');
+        this.setEyeState('thinking');
         this.isStreaming = true;
         this.submitTarget.disabled = true;
 
@@ -63,10 +112,14 @@ export default class extends Controller {
         } catch (error) {
             if (error.name !== 'AbortError') {
                 this.setStatus(`Erreur : ${error.message}`);
+                this.setEyeState('error');
             }
         } finally {
             this.isStreaming = false;
             this.submitTarget.disabled = false;
+            if (this.eyeTarget?.dataset.state === 'thinking') {
+                this.setEyeState('idle');
+            }
         }
     }
 
@@ -128,30 +181,61 @@ export default class extends Controller {
 
         if (event === 'done') {
             this.setStatus('Terminé.');
+            this.setEyeState('idle');
+            this.placeCaretAtEnd();
         }
     }
 
     /**
-     * Recopie le contenu de #ai-output dans le textarea.
+     * En fin de streaming : ajoute un retour chariot et place le curseur en fin
+     * de texte (dans le textarea), puis fait défiler jusqu'en bas.
+     */
+    placeCaretAtEnd() {
+        const terminal = this.terminalTarget;
+        if (!terminal.value.endsWith('\n')) {
+            terminal.value += '\n';
+        }
+        terminal.focus();
+        const end = terminal.value.length;
+        terminal.setSelectionRange(end, end);
+        terminal.scrollTop = terminal.scrollHeight;
+        // Le transcript complet (demande + réponse) est désormais validé.
+        this.committedLength = terminal.value.length;
+    }
+
+    /**
+     * Recopie la réponse cumulée (#ai-output) dans le textarea en n'ajoutant
+     * que le nouveau delta (le serveur renvoie du texte cumulé). L'opération
+     * est idempotente : un appel supplémentaire avec le même contenu n'ajoute
+     * rien, ce qui évite tout doublon.
      */
     renderTerminal() {
         const output = document.getElementById('ai-output');
-        if (output) {
-            this.terminalTarget.value = output.textContent;
+        if (!output) {
+            return;
+        }
+        const answer = output.textContent;
+        if (answer.length > this.answerLength) {
+            this.terminalTarget.value += answer.slice(this.answerLength);
+            this.answerLength = answer.length;
+            this.terminalTarget.scrollTop = this.terminalTarget.scrollHeight;
         }
     }
 
     /**
-     * Vide le terminal et la zone de sortie.
+     * Vide le terminal et la zone de sortie (seul moyen d'effacer le texte).
      */
     reset() {
         this.cancel();
         this.terminalTarget.value = '';
+        this.committedLength = 0;
+        this.answerLength = 0;
         const output = document.getElementById('ai-output');
         if (output) {
             output.textContent = '';
         }
-        this.setStatus('');
+        this.setStatus('EN ATTENTE');
+        this.setEyeState('idle');
     }
 
     /**

@@ -29,6 +29,17 @@ final class TestAiControllerTest extends WebTestCase
         self::assertSelectorExists('#ai-output');
     }
 
+    public function testPageRendersHalConsoleAndReactiveEye(): void
+    {
+        $client = self::createClient();
+        $client->request('GET', '/test_ai');
+
+        // La console HAL 9000 et son œil réactif (état initial « idle »).
+        self::assertSelectorExists('.hal-console');
+        self::assertSelectorExists('[data-test-ai-target="eye"][data-state="idle"]');
+        self::assertSelectorExists('#ai-status[data-test-ai-target="status"]');
+    }
+
     public function testStreamEndpointReturnsServerSentEvents(): void
     {
         // EventStreamResponse est une StreamedResponse que le client WebTestCase ne

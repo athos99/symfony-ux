@@ -8,3 +8,4 @@ startStimulusApp();
  * This file is the Vite entry point rendered by Symfony Reprise in Twig.
  */
 import './styles/app.css';
+import './styles/test-ai.css';
