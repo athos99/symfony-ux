@@ -1,0 +1,16 @@
+ai:
+    platform:
+        # Inference Platform configuration.
+        # https://github.com/symfony/ai/tree/main/src/platform#platform-bridges
+        openrouter:
+            api_key: '%env(OPENROUTER_KEY)%'
+    agent:
+        # Agent configuration: use the OpenRouter model selected for this project.
+        default:
+            platform: 'ai.platform.openrouter'
+            model:
+                name: 'openrouter/auto'
+                options:
+                    temperature: .6
+            include_sources: true
+    store:
