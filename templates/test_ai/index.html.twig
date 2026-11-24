@@ -123,14 +123,22 @@
                         </div>
 
                         <label for="ai-terminal" class="sr-only">Terminal de chat</label>
-                        <textarea
-                            id="ai-terminal"
-                            data-test-ai-target="terminal"
-                            class="hal-terminal__screen"
-                            placeholder="> Écrivez votre demande puis cliquez sur « Envoyer »…"
-                            aria-live="polite"
-                            spellcheck="false"
-                        ></textarea>
+                        <div class="hal-terminal__field">
+                            {# Miroir coloré derrière le textarea (texte de l'IA en ambre). #}
+                            <div
+                                class="hal-terminal__mirror"
+                                data-test-ai-target="mirror"
+                                aria-hidden="true"
+                            ></div>
+                            <textarea
+                                id="ai-terminal"
+                                data-test-ai-target="terminal"
+                                class="hal-terminal__screen"
+                                placeholder="> Écrivez votre demande puis cliquez sur « Envoyer »…"
+                                aria-live="polite"
+                                spellcheck="false"
+                            ></textarea>
+                        </div>
 
                         <div class="hal-terminal__actions">
                             <button

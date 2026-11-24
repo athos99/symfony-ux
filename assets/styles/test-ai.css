@@ -609,21 +609,51 @@
     box-shadow: 0 0 8px var(--hal-red-soft);
 }
 
-.hal-terminal__screen {
+.hal-terminal__field {
+    position: relative;
     flex: 1;
-    width: 100%;
+    display: flex;
     min-height: clamp(240px, 42vh, 440px);
-    padding: 1.1rem 1.25rem;
-    border: 0;
-    outline: none;
-    resize: vertical;
     background-color: #333b40;
-    color: var(--hal-green);
-    caret-color: var(--hal-green);
+}
+
+.hal-terminal__mirror,
+.hal-terminal__screen {
     font-family: var(--hal-font-mono);
     font-size: 1rem;
     line-height: 1.55;
+    padding: 1.1rem 1.25rem;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    overflow-y: scroll;
+    scrollbar-gutter: stable;
+}
+
+.hal-terminal__mirror {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    color: var(--hal-green);
     text-shadow: 0 0 6px rgb(125 255 176 / 55%);
+}
+
+.hal-terminal__mirror .hal-ai {
+    color: #ffb347;
+    text-shadow: 0 0 6px rgb(255 179 71 / 55%);
+}
+
+.hal-terminal__screen {
+    position: relative;
+    width: 100%;
+    min-height: clamp(240px, 42vh, 440px);
+    border: 0;
+    outline: none;
+    resize: vertical;
+    background: transparent;
+    /* Texte transparent : le miroir coloré s'affiche derrière. */
+    color: transparent;
+    caret-color: var(--hal-green);
 }
 
 .hal-terminal__screen::placeholder {

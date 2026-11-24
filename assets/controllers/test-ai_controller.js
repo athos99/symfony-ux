@@ -16,7 +16,7 @@ import { renderStreamMessage } from '@hotwired/turbo';
  * JSON (la demande) via POST.
  */
 export default class extends Controller {
-    static targets = ['terminal', 'submit', 'status', 'eye'];
+    static targets = ['terminal', 'submit', 'status', 'eye', 'mirror'];
     static values = { streamUrl: String };
 
     connect() {
@@ -28,14 +28,21 @@ export default class extends Controller {
         // Nombre de caractères de la réponse en cours déjà recopiés dans le
         // textarea (le serveur pousse un texte cumulé : on n'ajoute que le delta).
         this.answerLength = 0;
+        // Plages [start, end] du texte de l'IA, pour colorer le miroir en ambre.
+        this.aiRanges = [];
+        this.currentRange = null;
         this.boundInput = () => this.handleTyping();
+        this.boundScroll = () => this.syncMirrorScroll();
         this.setEyeState('idle');
         this.terminalTarget.addEventListener('input', this.boundInput);
+        this.terminalTarget.addEventListener('scroll', this.boundScroll);
+        this.renderMirror();
     }
 
     disconnect() {
         this.cancel();
         this.terminalTarget.removeEventListener('input', this.boundInput);
+        this.terminalTarget.removeEventListener('scroll', this.boundScroll);
         if (this.typingTimeout) {
             clearTimeout(this.typingTimeout);
         }
@@ -45,6 +52,8 @@ export default class extends Controller {
      * Réaction de l'œil à la frappe : passe en « typing » puis revient au repos.
      */
     handleTyping() {
+        // Le texte saisi (zone utilisateur) doit être répercuté dans le miroir.
+        this.renderMirror();
         if (this.isStreaming) {
             return;
         }
@@ -80,6 +89,11 @@ export default class extends Controller {
         const base = full.replace(/\s+$/, '');
         this.terminalTarget.value = base ? `${base}\n\n` : '';
         this.answerLength = 0;
+        // Nouvelle plage pour la réponse de l'IA (colorée en ambre dans le miroir).
+        const start = this.terminalTarget.value.length;
+        this.currentRange = { start, end: start };
+        this.aiRanges.push(this.currentRange);
+        this.renderMirror();
 
         const output = document.getElementById('ai-output');
         if (output) {
@@ -187,20 +201,21 @@ export default class extends Controller {
     }
 
     /**
-     * En fin de streaming : ajoute un retour chariot et place le curseur en fin
-     * de texte (dans le textarea), puis fait défiler jusqu'en bas.
+     * En fin de streaming : ajoute deux retours chariot après le texte de l'IA
+     * et place le curseur à la fin (dans le textarea), puis défile en bas.
      */
     placeCaretAtEnd() {
         const terminal = this.terminalTarget;
-        if (!terminal.value.endsWith('\n')) {
-            terminal.value += '\n';
-        }
+        // On normalise la fin puis on ajoute deux retours chariot.
+        terminal.value = `${terminal.value.replace(/\s+$/, '')}\n\n`;
         terminal.focus();
         const end = terminal.value.length;
         terminal.setSelectionRange(end, end);
         terminal.scrollTop = terminal.scrollHeight;
         // Le transcript complet (demande + réponse) est désormais validé.
         this.committedLength = terminal.value.length;
+        this.renderMirror();
+        this.syncMirrorScroll();
     }
 
     /**
@@ -219,7 +234,57 @@ export default class extends Controller {
             this.terminalTarget.value += answer.slice(this.answerLength);
             this.answerLength = answer.length;
             this.terminalTarget.scrollTop = this.terminalTarget.scrollHeight;
+            if (this.currentRange) {
+                this.currentRange.end = this.terminalTarget.value.length;
+            }
+            this.renderMirror();
         }
+    }
+
+    /**
+     * Reconstruit le miroir coloré (texte utilisateur en vert, texte de l'IA en
+     * ambre) à partir de la valeur du textarea et des plages d'IA mémorisées.
+     */
+    renderMirror() {
+        if (!this.hasMirrorTarget) {
+            return;
+        }
+        const value = this.terminalTarget.value;
+        let html = '';
+        let cursor = 0;
+        for (const range of this.aiRanges) {
+            if (range.end <= range.start) {
+                continue;
+            }
+            html += this.escapeHtml(value.slice(cursor, range.start));
+            html += `<span class="hal-ai">${this.escapeHtml(value.slice(range.start, range.end))}</span>`;
+            cursor = range.end;
+        }
+        html += this.escapeHtml(value.slice(cursor));
+        // Garde une hauteur pour l'éventuelle dernière ligne vide.
+        if (value.endsWith('\n')) {
+            html += ' ';
+        }
+        this.mirrorTarget.innerHTML = html;
+        this.syncMirrorScroll();
+    }
+
+    /**
+     * Synchronise le défilement du miroir avec celui du textarea.
+     */
+    syncMirrorScroll() {
+        if (!this.hasMirrorTarget) {
+            return;
+        }
+        this.mirrorTarget.scrollTop = this.terminalTarget.scrollTop;
+        this.mirrorTarget.scrollLeft = this.terminalTarget.scrollLeft;
+    }
+
+    escapeHtml(text) {
+        return text
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;');
     }
 
     /**
@@ -230,12 +295,16 @@ export default class extends Controller {
         this.terminalTarget.value = '';
         this.committedLength = 0;
         this.answerLength = 0;
+        this.aiRanges = [];
+        this.currentRange = null;
         const output = document.getElementById('ai-output');
         if (output) {
             output.textContent = '';
         }
         this.setStatus('EN ATTENTE');
         this.setEyeState('idle');
+        this.renderMirror();
+        this.syncMirrorScroll();
     }
 
     /**
