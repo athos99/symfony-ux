@@ -13,7 +13,7 @@ response_headers:
             - "script-src-elem 'self' data: 'unsafe-inline' 'unsafe-hashes' 'unsafe-eval' http://localhost:5173;"
             - "style-src 'self' 'unsafe-inline'  http://localhost:5173 fonts.googleapis.com;"
             - "font-src fonts.gstatic.com;"
-            - "img-src 'self' data: localhost;"
+            - "img-src 'self' data: localhost:1085;"
             - "connect-src 'self';"
 
         X-Frame-Options:

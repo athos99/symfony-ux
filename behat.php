@@ -36,7 +36,7 @@ return (new Config())
             )
             ->withExtension(
                 new Extension(MinkExtension::class, [
-                    'base_url' => 'http://localhost',
+                    'base_url' => 'http://localhost:1085/symfony-ux/public/',
                     'sessions' => [
                         'default' => [
                             'browserkit_http' => null,

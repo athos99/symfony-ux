@@ -40,7 +40,7 @@ docker exec -it php85 bash -c "cd /var/www/symfony-ux && bash"
 Outils dans `php85` : `php` 8.5, `composer` 2.11, `node` 26, `yarn` 1.22.
 Ne jamais lancer `php`, `composer`, `yarn`, `vite`, etc. directement sur l'hôte WSL/Windows.
 
-- URL navigateur (Windows) : `http://localhost/symfony-ux/public/`
+- URL navigateur (Windows) : `http://localhost:1085/symfony-ux/public/`
 - Xdebug est installé pour le debug et le code coverage depuis VS Code
   (variables du conteneur : `xdebug.start_with_request=yes`, `xdebug.mode=debug`,
   `xdebug.client_host=host.docker.internal`).
