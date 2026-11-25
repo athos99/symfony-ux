@@ -154,6 +154,27 @@ Le `textarea#ai-terminal` sert à la fois d'entrée (demande) et d'affichage
 (demande + réponse). À l'envoi, Stimulus y écrit la demande, puis recopie en
 direct le contenu de `#ai-output` (la réponse cumulée poussée par Turbo).
 
+## 5bis. Chronomètres (afficheurs 7 segments)
+
+Sous l'indicateur `#ai-status`, quatre chronomètres à affichage digital
+8 chiffres `HH:MM:SS.CC` (heure, minute, seconde, centième) sont pilotés par le
+contrôleur Stimulus. À la charge de la page, tous affichent `00:00:00.00`
+(rendu texte de repli, puis remplacé par des afficheurs 7 segments SVG).
+
+| Chronomètre | Démarrage | Arrêt |
+| --- | --- | --- |
+| **analyse** | envoi de la question | réception du 1er token (`event: message`) |
+| **réponse** | réception du 1er token | fin de la réponse (`event: done`) |
+| **total** | envoi de la question | fin de la réponse (`event: done`) |
+| **session** | 1re question (reprise à chaque question) | fin de la réponse (`event: done`) |
+
+Les temps sont calculés à partir d'horodatages `performance.now()` dans une
+boucle `requestAnimationFrame`, donc ils restent exacts même si des frames sont
+sautées. Le rendu 7 segments n'est reconstruit que lorsque la valeur au centième
+change. « session » cumule le temps de traitement actif : il se fige à la fin de
+chaque réponse et reprend à la question suivante (remis à zéro au chargement de
+la page).
+
 ## 6. Tests
 
 - `tests/Controller/TestAiControllerTest.php` vérifie :

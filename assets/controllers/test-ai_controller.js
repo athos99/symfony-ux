@@ -50,6 +50,10 @@ export default class extends Controller {
         'temperature',
         'temperatureValue',
         'words',
+        'chronoAnalyse',
+        'chronoReponse',
+        'chronoTotal',
+        'chronoSession',
     ];
     static values = { streamUrl: String };
 
@@ -70,6 +74,18 @@ export default class extends Controller {
         this.wordTimer = null;
         this.boundInput = () => this.handleTyping();
         this.boundScroll = () => this.syncMirrorScroll();
+        // Chronomètres : « session » cumule le temps de traitement actif de la
+        // page. Il démarre à zéro, tourne pendant une question et se fige à la
+        // fin de la réponse (il reprend à la question suivante). Nouvelle page =
+        // remise à zéro. Les trois autres (analyse / réponse / total) sont
+        // réinitialisés à chaque envoi.
+        this.sessionAccum = 0;
+        this.sessionSince = null;
+        this.questionStart = null;
+        this.firstTokenAt = null;
+        this.finishedAt = null;
+        this.rafId = null;
+        this.startClock();
         this.setEyeState('idle');
         this.terminalTarget.addEventListener('input', this.boundInput);
         this.terminalTarget.addEventListener('scroll', this.boundScroll);
@@ -80,6 +96,7 @@ export default class extends Controller {
     disconnect() {
         this.cancel();
         this.stopWords();
+        this.stopClock();
         this.terminalTarget.removeEventListener('input', this.boundInput);
         this.terminalTarget.removeEventListener('scroll', this.boundScroll);
         if (this.typingTimeout) {
@@ -121,10 +138,26 @@ export default class extends Controller {
             return;
         }
         const text = Number.parseFloat(value).toFixed(1);
+        this.renderSegments(this.temperatureValueTarget, text);
+        this.temperatureValueTarget.setAttribute(
+            'aria-label',
+            `Température ${text}`,
+        );
+    }
+
+    /**
+     * Dessine une chaîne de caractères en afficheur 7 segments (chiffres, « : »
+     * et « . »). Utilisé pour la température et les chronomètres.
+     */
+    renderSegments(target, text) {
         let html = '';
         for (const char of text) {
             if (char === '.') {
                 html += '<span class="hal-seg__dot"></span>';
+                continue;
+            }
+            if (char === ':') {
+                html += '<span class="hal-seg__colon"></span>';
                 continue;
             }
             const active = SEGMENTS[char] ?? [];
@@ -135,11 +168,115 @@ export default class extends Controller {
             }).join('');
             html += `<svg class="hal-seg__digit" viewBox="0 0 10 18" aria-hidden="true">${lines}</svg>`;
         }
-        this.temperatureValueTarget.innerHTML = html;
-        this.temperatureValueTarget.setAttribute(
-            'aria-label',
-            `Température ${text}`,
+        target.innerHTML = html;
+    }
+
+    /**
+     * Boucle d'animation (requestAnimationFrame) qui rafraîchit les chronomètres.
+     * Les temps sont calculés à partir d'horodatages (performance.now), donc le
+     * résultat reste exact même si des frames sont sautées.
+     */
+    startClock() {
+        if (this.rafId !== null) {
+            return;
+        }
+        const loop = () => {
+            this.renderChronos();
+            this.rafId = requestAnimationFrame(loop);
+        };
+        this.rafId = requestAnimationFrame(loop);
+    }
+
+    stopClock() {
+        if (this.rafId !== null) {
+            cancelAnimationFrame(this.rafId);
+            this.rafId = null;
+        }
+    }
+
+    /**
+     * Fige le chronomètre « session » : le temps écoulé depuis la reprise est
+     * ajouté au cumul et le compteur s'arrête (il reprendra à la question
+     * suivante).
+     */
+    freezeSession() {
+        if (this.sessionSince !== null) {
+            this.sessionAccum += performance.now() - this.sessionSince;
+            this.sessionSince = null;
+        }
+    }
+
+    /**
+     * Met à jour les quatre afficheurs 7 segments des chronomètres.
+     */
+    renderChronos() {
+        const now = performance.now();
+        const analyseEnd = this.firstTokenAt ?? this.finishedAt ?? now;
+        const reponseEnd = this.finishedAt ?? now;
+        const totalEnd = this.finishedAt ?? now;
+
+        const analyse =
+            this.questionStart === null ? 0 : analyseEnd - this.questionStart;
+        const reponse =
+            this.firstTokenAt === null ? 0 : reponseEnd - this.firstTokenAt;
+        const total =
+            this.questionStart === null ? 0 : totalEnd - this.questionStart;
+        const session =
+            this.sessionAccum +
+            (this.sessionSince === null ? 0 : now - this.sessionSince);
+
+        this.writeChrono(
+            this.hasChronoAnalyseTarget ? this.chronoAnalyseTarget : null,
+            analyse,
+            'Analyse',
         );
+        this.writeChrono(
+            this.hasChronoReponseTarget ? this.chronoReponseTarget : null,
+            reponse,
+            'Réponse',
+        );
+        this.writeChrono(
+            this.hasChronoTotalTarget ? this.chronoTotalTarget : null,
+            total,
+            'Total',
+        );
+        this.writeChrono(
+            this.hasChronoSessionTarget ? this.chronoSessionTarget : null,
+            session,
+            'Session',
+        );
+    }
+
+    /**
+     * Formate une durée en millisecondes en « HH:MM:SS.CC » (8 chiffres).
+     */
+    formatChrono(ms) {
+        const totalCs = Math.floor(Math.max(0, ms) / 10);
+        const cs = totalCs % 100;
+        const totalSeconds = Math.floor(totalCs / 100);
+        const seconds = totalSeconds % 60;
+        const totalMinutes = Math.floor(totalSeconds / 60);
+        const minutes = totalMinutes % 60;
+        const hours = Math.floor(totalMinutes / 60);
+        const pad = (value) => String(value).padStart(2, '0');
+        return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}.${pad(cs)}`;
+    }
+
+    /**
+     * Affiche une durée dans un afficheur 7 segments, sans reconstruire le DOM
+     * si la valeur (au centième) n'a pas changé.
+     */
+    writeChrono(target, ms, label) {
+        if (!target) {
+            return;
+        }
+        const text = this.formatChrono(ms);
+        if (target.dataset.text === text) {
+            return;
+        }
+        target.dataset.text = text;
+        this.renderSegments(target, text);
+        target.setAttribute('aria-label', `${label} ${text}`);
     }
 
     /**
@@ -216,7 +353,7 @@ export default class extends Controller {
         );
         span.style.setProperty(
             '--size',
-            `${(0.9 + Math.random() * 0.9).toFixed(2)}rem`,
+            `${(1.5 + Math.random() * 1.5).toFixed(2)}rem`,
         );
         span.style.color =
             Math.random() > 0.5 ? 'var(--hal-red-soft)' : '#ffd0c8';
@@ -262,6 +399,16 @@ export default class extends Controller {
         this.setEyeState('thinking');
         this.isStreaming = true;
         this.submitTarget.disabled = true;
+
+        // (Ré)initialisation des chronomètres à l'envoi de la question.
+        this.questionStart = performance.now();
+        this.firstTokenAt = null;
+        this.finishedAt = null;
+        // « session » reprend (ou démarre) à chaque question.
+        if (this.sessionSince === null) {
+            this.sessionSince = performance.now();
+        }
+        this.renderChronos();
 
         // Température choisie sur le panneau (0.0 → 2.0).
         const temperature = this.hasTemperatureTarget
@@ -347,6 +494,12 @@ export default class extends Controller {
             return;
         }
 
+        // Premier fragment de texte reçu : le temps d'« analyse » (envoi → 1er
+        // token) s'arrête et le temps de « réponse » (1er token → fin) démarre.
+        if (event === 'message' && this.firstTokenAt === null) {
+            this.firstTokenAt = performance.now();
+        }
+
         // On laisse Turbo appliquer le Turbo Stream (met à jour #ai-output).
         // renderStreamMessage est asynchrone (il attend un repaint) : on attend
         // donc le prochain frame avant de recopier le texte dans le terminal.
@@ -357,6 +510,14 @@ export default class extends Controller {
         this.renderTerminal();
 
         if (event === 'done') {
+            // Fin de la réponse : on fige « réponse » et « total ». Si aucun
+            // token n'a été reçu, « analyse » s'arrête aussi à cet instant.
+            this.finishedAt = performance.now();
+            if (this.firstTokenAt === null) {
+                this.firstTokenAt = this.finishedAt;
+            }
+            this.freezeSession();
+            this.renderChronos();
             this.setStatus('Terminé.');
             this.setEyeState('idle');
             this.placeCaretAtEnd();
@@ -460,6 +621,11 @@ export default class extends Controller {
         this.answerLength = 0;
         this.aiRanges = [];
         this.currentRange = null;
+        // Les chronomètres par question sont remis à zéro ; « session » continue.
+        this.questionStart = null;
+        this.firstTokenAt = null;
+        this.finishedAt = null;
+        this.renderChronos();
         const output = document.getElementById('ai-output');
         if (output) {
             output.textContent = '';
@@ -478,6 +644,15 @@ export default class extends Controller {
             this.abortController.abort();
             this.abortController = null;
         }
+        // Annulation en cours de route : on fige les chronomètres par question
+        // pour qu'ils ne continuent pas à défiler indéfiniment.
+        if (this.questionStart !== null && this.finishedAt === null) {
+            this.finishedAt = performance.now();
+            if (this.firstTokenAt === null) {
+                this.firstTokenAt = this.finishedAt;
+            }
+        }
+        this.freezeSession();
         this.isStreaming = false;
         if (this.hasSubmitTarget) {
             this.submitTarget.disabled = false;

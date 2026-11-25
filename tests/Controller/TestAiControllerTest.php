@@ -54,6 +54,24 @@ final class TestAiControllerTest extends WebTestCase
         self::assertSelectorExists('output[data-test-ai-target="temperatureValue"]');
     }
 
+    public function testPageRendersFourChronometersInitialisedToZero(): void
+    {
+        $client = self::createClient();
+        $client->request('GET', '/test_ai');
+
+        // Quatre chronomètres 7 segments sous l'indicateur « ai-status »,
+        // initialement à zéro (HH:MM:SS.CC).
+        foreach (['chronoAnalyse', 'chronoReponse', 'chronoTotal', 'chronoSession'] as $target) {
+            self::assertSelectorExists(
+                sprintf('[data-test-ai-target="%s"][role="timer"]', $target),
+            );
+            self::assertSelectorTextContains(
+                sprintf('[data-test-ai-target="%s"]', $target),
+                '00:00:00.00',
+            );
+        }
+    }
+
     #[\PHPUnit\Framework\Attributes\DataProvider('temperatureProvider')]
     public function testStreamEndpointForwardsBoundedTemperature(float $input, float $expected): void
     {
