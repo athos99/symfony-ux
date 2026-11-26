@@ -26,5 +26,8 @@
         "format": "biome format --write ./assets ./tests/browser ./vite.config.js",
         "biome:check": "biome check ./assets ./tests/browser ./vite.config.js",
         "biome:fix": "biome check --write ./assets ./tests/browser ./vite.config.js"
+    },
+    "dependencies": {
+        "marked": "^18.3.0"
     }
 }

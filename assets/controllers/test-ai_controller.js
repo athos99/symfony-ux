@@ -1,5 +1,6 @@
 import { Controller } from '@hotwired/stimulus';
 import { renderStreamMessage } from '@hotwired/turbo';
+import { marked } from 'marked';
 
 // Afficheur 7 segments (style LED années 70) : segments actifs par chiffre.
 const SEGMENTS = {
@@ -15,6 +16,16 @@ const SEGMENTS = {
     9: ['a', 'b', 'c', 'd', 'f', 'g'],
 };
 const ALL_SEGMENTS = ['a', 'b', 'c', 'd', 'e', 'f', 'g'];
+
+/**
+ * Échappe le HTML brut (la réponse du modèle n'est pas de confiance).
+ */
+function escapeHtml(text) {
+    return text
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;');
+}
 // Coordonnées [x1, y1, x2, y2] de chaque segment (viewBox 0 0 10 18).
 const SEGMENT_COORDS = {
     a: [1.5, 1, 8.5, 1],
@@ -26,6 +37,18 @@ const SEGMENT_COORDS = {
     g: [1.5, 9, 8.5, 9],
 };
 
+// Options de rendu Markdown : on échappe le HTML brut (la réponse du modèle
+// n'est pas de confiance) et on conserve les retours à la ligne simples.
+marked.use({
+    breaks: true,
+    gfm: true,
+    renderer: {
+        html({ text }) {
+            return escapeHtml(text);
+        },
+    },
+});
+
 /**
  * Contrôleur Stimulus du terminal de chat IA.
  *
@@ -34,7 +57,8 @@ const SEGMENT_COORDS = {
  *  - lit le flux SSE fragment par fragment (fetch + ReadableStream) ;
  *  - pour chaque événement, transmet le Turbo Stream à Turbo via
  *    renderStreamMessage(), ce qui met à jour #ai-output ;
- *  - recopie en direct le contenu de #ai-output dans le textarea (le terminal).
+ *  - recopie en direct le contenu de #ai-output dans le transcript, qui est
+ *    rendu en Markdown (titres, gras, listes, code…) à l'écran.
  *
  * On utilise fetch() plutôt que l'élément <turbo-stream-source> car ce dernier
  * ne gère que le GET (EventSource), alors qu'on a besoin d'envoyer un corps
@@ -43,10 +67,10 @@ const SEGMENT_COORDS = {
 export default class extends Controller {
     static targets = [
         'terminal',
+        'screen',
         'submit',
         'status',
         'eye',
-        'mirror',
         'temperature',
         'temperatureValue',
         'words',
@@ -60,22 +84,19 @@ export default class extends Controller {
     connect() {
         this.abortController = null;
         this.typingTimeout = null;
-        // Longueur du transcript déjà « validé » (demandes + réponses rendues).
-        // La nouvelle demande est tout ce qui est saisi au-delà de cette longueur.
-        this.committedLength = 0;
-        // Nombre de caractères de la réponse en cours déjà recopiés dans le
-        // textarea (le serveur pousse un texte cumulé : on n'ajoute que le delta).
+        // Transcript : liste de blocs { role: 'user' | 'ai', text }.
+        // L'écran affiche le rendu Markdown de chaque bloc.
+        this.blocks = [];
+        // Nombre de caractères de la réponse en cours déjà recopiés depuis
+        // #ai-output (le serveur pousse un texte cumulé : on n'ajoute que le delta).
         this.answerLength = 0;
-        // Plages [start, end] du texte de l'IA, pour colorer le miroir en ambre.
-        this.aiRanges = [];
-        this.currentRange = null;
         // Mots de la dernière demande (pour l'animation « délirante » de l'œil).
         this.lastRequest = '';
         this.wordTimer = null;
         this.boundInput = () => this.handleTyping();
-        this.boundScroll = () => this.syncMirrorScroll();
+        this.boundScroll = () => this.syncScreenScroll();
         // Chronomètres : « session » cumule le temps de traitement actif de la
-        // page. Il démarre à zéro, tourne pendant une question et se fige à la
+        // page. Il démarre à zéro, tour pendant une question et se fige à la
         // fin de la réponse (il reprend à la question suivante). Nouvelle page =
         // remise à zéro. Les trois autres (analyse / réponse / total) sont
         // réinitialisés à chaque envoi.
@@ -88,8 +109,10 @@ export default class extends Controller {
         this.startClock();
         this.setEyeState('idle');
         this.terminalTarget.addEventListener('input', this.boundInput);
-        this.terminalTarget.addEventListener('scroll', this.boundScroll);
-        this.renderMirror();
+        if (this.hasScreenTarget) {
+            this.screenTarget.addEventListener('scroll', this.boundScroll);
+        }
+        this.renderScreen();
         this.renderTemperatureDisplay(this.temperatureTarget?.value ?? '0.7');
     }
 
@@ -98,7 +121,9 @@ export default class extends Controller {
         this.stopWords();
         this.stopClock();
         this.terminalTarget.removeEventListener('input', this.boundInput);
-        this.terminalTarget.removeEventListener('scroll', this.boundScroll);
+        if (this.hasScreenTarget) {
+            this.screenTarget.removeEventListener('scroll', this.boundScroll);
+        }
         if (this.typingTimeout) {
             clearTimeout(this.typingTimeout);
         }
@@ -108,8 +133,6 @@ export default class extends Controller {
      * Réaction de l'œil à la frappe : passe en « typing » puis revient au repos.
      */
     handleTyping() {
-        // Le texte saisi (zone utilisateur) doit être répercuté dans le miroir.
-        this.renderMirror();
         if (this.isStreaming) {
             return;
         }
@@ -371,24 +394,19 @@ export default class extends Controller {
      * Envoi de la demande et ouverture du flux SSE.
      */
     async send() {
-        // La demande est la portion saisie au-delà du transcript déjà validé.
-        const full = this.terminalTarget.value;
-        const request = full.slice(this.committedLength).trim();
+        const request = this.terminalTarget.value.trim();
         if (!request || this.isStreaming) {
             return;
         }
         this.lastRequest = request;
 
-        // On conserve tout le texte existant (jamais effacé) et on ajoute la
-        // nouvelle demande, suivie d'une séparation.
-        const base = full.replace(/\s+$/, '');
-        this.terminalTarget.value = base ? `${base}\n\n` : '';
+        // On ajoute la demande au transcript, puis on vide la zone de saisie.
+        this.blocks.push({ role: 'user', text: request });
+        this.terminalTarget.value = '';
         this.answerLength = 0;
-        // Nouvelle plage pour la réponse de l'IA (colorée en ambre dans le miroir).
-        const start = this.terminalTarget.value.length;
-        this.currentRange = { start, end: start };
-        this.aiRanges.push(this.currentRange);
-        this.renderMirror();
+        // Nouveau bloc pour la réponse de l'IA (rendu en Markdown, coloré ambre).
+        this.blocks.push({ role: 'ai', text: '' });
+        this.renderScreen();
 
         const output = document.getElementById('ai-output');
         if (output) {
@@ -479,16 +497,25 @@ export default class extends Controller {
      */
     async processEvent(rawEvent) {
         let event = 'message';
-        let data = '';
+        const dataLines = [];
 
         for (const line of rawEvent.split('\n')) {
             if (line.startsWith('event:')) {
                 event = line.slice(6).trim();
             } else if (line.startsWith('data:')) {
-                // On retire le préfixe « data: » et un éventuel espace initial.
-                data += line.slice(5).trimStart();
+                // Conforme à la spec SSE : on retire « data: » puis un unique
+                // espace initial (et non tous les espaces, pour préserver
+                // l'indentation du Markdown). Les lignes « data: » multiples
+                // sont recombinées avec un retour chariot.
+                let value = line.slice(5);
+                if (value.startsWith(' ')) {
+                    value = value.slice(1);
+                }
+                dataLines.push(value);
             }
         }
+
+        const data = dataLines.join('\n');
 
         if (!data) {
             return;
@@ -502,12 +529,12 @@ export default class extends Controller {
 
         // On laisse Turbo appliquer le Turbo Stream (met à jour #ai-output).
         // renderStreamMessage est asynchrone (il attend un repaint) : on attend
-        // donc le prochain frame avant de recopier le texte dans le terminal.
+        // donc le prochain frame avant de recopier le texte dans le transcript.
         renderStreamMessage(data);
         await new Promise((resolve) => requestAnimationFrame(resolve));
 
-        // On recopie la réponse cumulée dans le textarea du terminal.
-        this.renderTerminal();
+        // On recopie la réponse cumulée dans le transcript (rendu Markdown).
+        this.renderAnswer();
 
         if (event === 'done') {
             // Fin de la réponse : on fige « réponse » et « total ». Si aucun
@@ -525,90 +552,71 @@ export default class extends Controller {
     }
 
     /**
-     * En fin de streaming : ajoute deux retours chariot après le texte de l'IA
-     * et place le curseur à la fin (dans le textarea), puis défile en bas.
+     * En fin de streaming : place le curseur dans la zone de saisie et défile
+     * le transcript en bas.
      */
     placeCaretAtEnd() {
-        const terminal = this.terminalTarget;
-        // On normalise la fin puis on ajoute deux retours chariot.
-        terminal.value = `${terminal.value.replace(/\s+$/, '')}\n\n`;
-        terminal.focus();
-        const end = terminal.value.length;
-        terminal.setSelectionRange(end, end);
-        terminal.scrollTop = terminal.scrollHeight;
-        // Le transcript complet (demande + réponse) est désormais validé.
-        this.committedLength = terminal.value.length;
-        this.renderMirror();
-        this.syncMirrorScroll();
+        this.terminalTarget.focus();
+        this.scrollScreenToBottom();
     }
 
     /**
-     * Recopie la réponse cumulée (#ai-output) dans le textarea en n'ajoutant
-     * que le nouveau delta (le serveur renvoie du texte cumulé). L'opération
-     * est idempotente : un appel supplémentaire avec le même contenu n'ajoute
-     * rien, ce qui évite tout doublon.
+     * Recopie la réponse cumulée (#ai-output) dans le dernier bloc « ai » en
+     * n'ajoutant que le nouveau delta (le serveur renvoie du texte cumulé).
+     * L'opération est idempotente : un appel supplémentaire avec le même
+     * contenu n'ajoute rien, ce qui évite tout doublon.
      */
-    renderTerminal() {
+    renderAnswer() {
         const output = document.getElementById('ai-output');
         if (!output) {
             return;
         }
         const answer = output.textContent;
-        if (answer.length > this.answerLength) {
-            this.terminalTarget.value += answer.slice(this.answerLength);
-            this.answerLength = answer.length;
-            this.terminalTarget.scrollTop = this.terminalTarget.scrollHeight;
-            if (this.currentRange) {
-                this.currentRange.end = this.terminalTarget.value.length;
-            }
-            this.renderMirror();
+        if (answer.length <= this.answerLength) {
+            return;
+        }
+        this.answerLength = answer.length;
+        const block = this.blocks.findLast((item) => item.role === 'ai');
+        if (block) {
+            block.text = answer;
+            this.renderScreen();
         }
     }
 
     /**
-     * Reconstruit le miroir coloré (texte utilisateur en vert, texte de l'IA en
-     * ambre) à partir de la valeur du textarea et des plages d'IA mémorisées.
+     * Reconstruit le transcript à l'écran : chaque demande est affichée en
+     * texte brut (vert), chaque réponse est rendue en Markdown (ambre).
      */
-    renderMirror() {
-        if (!this.hasMirrorTarget) {
+    renderScreen() {
+        if (!this.hasScreenTarget) {
             return;
         }
-        const value = this.terminalTarget.value;
-        let html = '';
-        let cursor = 0;
-        for (const range of this.aiRanges) {
-            if (range.end <= range.start) {
-                continue;
-            }
-            html += this.escapeHtml(value.slice(cursor, range.start));
-            html += `<span class="hal-ai">${this.escapeHtml(value.slice(range.start, range.end))}</span>`;
-            cursor = range.end;
+        this.screenTarget.innerHTML = this.blocks
+            .map((block) => {
+                if (block.role === 'user') {
+                    return `<div class="hal-msg hal-msg--user">${escapeHtml(block.text)}</div>`;
+                }
+                return `<div class="hal-msg hal-msg--ai">${marked.parse(block.text)}</div>`;
+            })
+            .join('');
+        this.scrollScreenToBottom();
+    }
+
+    /**
+     * Fait défiler le transcript vers le bas (dernière ligne visible).
+     */
+    scrollScreenToBottom() {
+        if (this.hasScreenTarget) {
+            this.screenTarget.scrollTop = this.screenTarget.scrollHeight;
         }
-        html += this.escapeHtml(value.slice(cursor));
-        // Garde une hauteur pour l'éventuelle dernière ligne vide.
-        if (value.endsWith('\n')) {
-            html += ' ';
-        }
-        this.mirrorTarget.innerHTML = html;
-        this.syncMirrorScroll();
     }
 
     /**
      * Synchronise le défilement du miroir avec celui du textarea.
      */
-    syncMirrorScroll() {
-        if (!this.hasMirrorTarget) {
-            return;
-        }
-        this.mirrorTarget.scrollTop = this.terminalTarget.scrollTop;
-        this.mirrorTarget.scrollLeft = this.terminalTarget.scrollLeft;
-    }
-
-    escapeHtml(text) {
-        return text
-            .replaceAll('&', '&amp;')
-            .replaceAll('<', '&lt;')
-            .replaceAll('>', '&gt;');
+    syncScreenScroll() {
+        // Le transcript est désormais l'unique zone défilante : rien à
+        // synchroniser. Méthode conservée pour le listener « scroll ».
     }
 
     /**
@@ -616,11 +624,9 @@ export default class extends Controller {
      */
     reset() {
         this.cancel();
+        this.blocks = [];
         this.terminalTarget.value = '';
-        this.committedLength = 0;
         this.answerLength = 0;
-        this.aiRanges = [];
-        this.currentRange = null;
         // Les chronomètres par question sont remis à zéro ; « session » continue.
         this.questionStart = null;
         this.firstTokenAt = null;
@@ -632,8 +638,7 @@ export default class extends Controller {
         }
         this.setStatus('EN ATTENTE');
         this.setEyeState('idle');
-        this.renderMirror();
-        this.syncMirrorScroll();
+        this.renderScreen();
     }
 
     /**

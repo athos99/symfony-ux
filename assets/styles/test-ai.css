@@ -584,8 +584,8 @@
     color: var(--hal-green);
     text-shadow: 0 0 6px rgb(125 255 176 / 55%);
     /* Taille réduite des afficheurs 7 segments pour les chronomètres. */
-    --seg-w: 13px;
-    --seg-h: 24px;
+    --seg-w: 10px;
+    --seg-h: 18px;
 }
 
 .hal-gauge {
@@ -641,13 +641,7 @@
 /* --- Commande de température ---------------------------------------- */
 .hal-temp {
     display: grid;
-    gap: 0.5rem;
-}
-
-.hal-temp__head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
+    gap: 0.25rem;
 }
 
 .hal-temp__label {
@@ -655,6 +649,7 @@
     font-size: 0.55rem;
     letter-spacing: 0.16em;
     color: var(--hal-muted);
+    text-align: center;
 }
 
 .hal-temp__value {
@@ -669,6 +664,28 @@
         inset 0 0 12px rgb(0 0 0 / 85%),
         0 0 0 2px #c3ccd1,
         0 0 0 3px rgb(27 36 41 / 45%);
+    margin-left: 0.5rem;
+    flex-shrink: 0;
+}
+
+.hal-temp__row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.hal-temp__row .hal-temp__slider {
+    flex: 1;
+    width: auto;
+    min-width: 0;
+    margin-top: 0;
+}
+
+.hal-temp__row .hal-temp__label {
+    flex-shrink: 0;
+    width: 2.5rem;
+    text-align: center;
+    margin: 0;
 }
 
 .hal-seg__digit {
@@ -730,29 +747,31 @@
 .hal-temp__slider {
     appearance: none;
     width: 100%;
-    height: 10px;
+    height: 3px;
     border: 1px solid var(--hal-line-strong);
     border-radius: 2px;
     background: linear-gradient(90deg, var(--hal-blue-soft), var(--hal-amber));
     box-shadow: inset 0 1px 2px rgb(27 36 41 / 25%);
     cursor: pointer;
+    margin-top: 0.25rem;
 }
 
 .hal-temp__slider::-webkit-slider-thumb {
     appearance: none;
-    width: 14px;
-    height: 18px;
+    width: 16px;
+    height: 16px;
     border: 1px solid #6b767c;
-    border-radius: 2px;
+    border-radius: 50%;
     background: linear-gradient(180deg, #f4f7f8, #c3ccd1);
     box-shadow: inset 0 1px 0 #fff;
+    cursor: pointer;
 }
 
 .hal-temp__slider::-moz-range-thumb {
-    width: 14px;
-    height: 18px;
+    width: 16px;
+    height: 16px;
     border: 1px solid #6b767c;
-    border-radius: 2px;
+    border-radius: 50%;
     background: linear-gradient(180deg, #f4f7f8, #c3ccd1);
     box-shadow: inset 0 1px 0 #fff;
 }
@@ -760,15 +779,6 @@
 .hal-temp__slider:focus-visible {
     outline: 2px solid var(--hal-blue);
     outline-offset: 2px;
-}
-
-.hal-temp__scale {
-    display: flex;
-    justify-content: space-between;
-    font-family: var(--hal-font-display);
-    font-size: 0.5rem;
-    letter-spacing: 0.1em;
-    color: var(--hal-muted);
 }
 
 /* --- Terminal CRT (écran sombre enchâssé) --------------------------- */
@@ -847,54 +857,226 @@
     display: flex;
     min-height: clamp(240px, 42vh, 440px);
     background-color: #333b40;
+    overflow: hidden;
 }
 
-.hal-terminal__mirror,
+/* Transcript rendu (Markdown) : zone défilante principale.
+   Positionné en absolu dans le champ (position: relative) pour ne pas
+   influencer sa hauteur : le contenu défile à l'intérieur sans jamais
+   redimensionner la zone, quelle que soit la longueur de la réponse. */
 .hal-terminal__screen {
+    position: absolute;
+    inset: 0;
     font-family: var(--hal-font-mono);
     font-size: 1rem;
-    line-height: 1.55;
-    padding: 1.1rem 1.25rem;
-    white-space: pre-wrap;
+    line-height: 1.1;
+    padding: 0.6rem 1.25rem;
+    color: var(--hal-green);
+    text-shadow: 0 0 6px rgb(125 255 176 / 55%);
     overflow-wrap: break-word;
     word-break: break-word;
     overflow-y: scroll;
     scrollbar-gutter: stable;
 }
 
-.hal-terminal__mirror {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
+.hal-terminal__screen > :first-child {
+    margin-top: 0;
+}
+
+.hal-terminal__screen > :last-child {
+    margin-bottom: 0;
+}
+
+/* Un bloc = une demande (vert) ou une réponse IA (ambre). */
+.hal-msg {
+    margin-block: 0 0.4rem;
+    white-space: pre-wrap;
+}
+
+.hal-msg--user {
+    color: var(--hal-green);
+}
+
+.hal-msg--ai {
     color: var(--hal-green);
     text-shadow: 0 0 6px rgb(125 255 176 / 55%);
+    /* Le HTML Markdown contient des retours à la ligne entre les blocs : on
+       les laisse se réduire (normal) pour ne pas créer d'espaces verticaux. */
+    white-space: normal;
 }
 
-.hal-terminal__mirror .hal-ai {
-    color: #ffb347;
-    text-shadow: 0 0 6px rgb(255 179 71 / 55%);
+/* Rendu Markdown à l'intérieur des réponses IA. */
+/* Titres : exactement comme un paragraphe normal (même police, même couleur,
+   aucun effet/ombre), seule la taille change selon le niveau. */
+.hal-msg--ai h1,
+.hal-msg--ai h2,
+.hal-msg--ai h3,
+.hal-msg--ai h4,
+.hal-msg--ai h5,
+.hal-msg--ai h6 {
+    margin: 0.4em 0 0.2em;
+    line-height: 1.05;
+    font-family: inherit;
+    font-style: normal;
+    font-weight: 400;
+    /* Vert clair : nuance plus lumineuse que le corps du texte. */
+    color: #c8ffd9;
+    text-shadow: none;
 }
 
-.hal-terminal__screen {
-    position: relative;
-    width: 100%;
-    min-height: clamp(240px, 42vh, 440px);
+.hal-msg--ai h1 {
+    font-size: 1.8em;
+}
+
+.hal-msg--ai h2 {
+    font-size: 1.6em;
+}
+
+.hal-msg--ai h3 {
+    font-size: 1.4em;
+}
+
+.hal-msg--ai h4 {
+    font-size: 1.25em;
+}
+
+.hal-msg--ai h5 {
+    font-size: 1.1em;
+}
+
+.hal-msg--ai h6 {
+    font-size: 1em;
+}
+
+.hal-msg--ai p {
+    margin: 0;
+}
+
+/* Listes : Tailwind v4 retire les puces par défaut, on les rétablit. */
+.hal-msg--ai ul,
+.hal-msg--ai ol {
+    margin: 0;
+    padding-left: 1.4em;
+}
+
+.hal-msg--ai ul {
+    list-style: disc;
+}
+
+.hal-msg--ai ol {
+    list-style: decimal;
+}
+
+.hal-msg--ai li {
+    display: list-item;
+    margin: 0;
+}
+
+.hal-msg--ai li::marker {
+    color: var(--hal-green);
+}
+
+.hal-msg--ai a {
+    color: var(--hal-green);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+/* Gras et italique rendus avec une vraie police (JetBrains Mono) qui possède
+   les variantes 700 et italique, contrairement à Share Tech Mono. */
+.hal-msg--ai strong {
+    font-family: 'JetBrains Mono', var(--hal-font-mono);
+    font-weight: 700;
+    /* Vert très clair : le gras se distingue par la luminosité. */
+    color: #eafff2;
+}
+
+.hal-msg--ai em {
+    font-family: 'JetBrains Mono', var(--hal-font-mono);
+    font-style: italic;
+    /* Vert plus soutenu : l'italique se distingue par la teinte. */
+    color: #9dffc4;
+}
+
+.hal-msg--ai code {
+    padding: 0.1em 0.35em;
+    border-radius: 3px;
+    background: rgb(0 0 0 / 35%);
+    font-family: var(--hal-font-mono);
+    font-size: 0.92em;
+}
+
+.hal-msg--ai pre {
+    margin: 0 0 0.3em;
+    padding: 0.7em 0.9em;
+    overflow-x: auto;
+    border: 1px solid rgb(125 255 176 / 30%);
+    border-radius: 5px;
+    background: rgb(0 0 0 / 40%);
+    white-space: pre;
+}
+
+.hal-msg--ai pre code {
+    padding: 0;
+    background: transparent;
+}
+
+.hal-msg--ai blockquote {
+    margin: 0;
+    padding: 0 0.8em;
+    border-left: 3px solid rgb(125 255 176 / 55%);
+    color: #b6ffcf;
+}
+
+.hal-msg--ai hr {
+    margin: 0.4em 0;
     border: 0;
+    border-top: 1px solid rgb(125 255 176 / 35%);
+}
+
+.hal-msg--ai table {
+    margin: 0 0 0.8em;
+    border-collapse: collapse;
+}
+
+.hal-msg--ai th,
+.hal-msg--ai td {
+    padding: 0.3em 0.6em;
+    border: 1px solid rgb(125 255 176 / 35%);
+}
+
+/* Zone de saisie (demande de l'utilisateur) sous le transcript. */
+.hal-terminal__composer {
+    padding: 0.7rem 0.8rem;
+    border-top: 1px solid rgb(125 255 176 / 18%);
+    background: linear-gradient(0deg, rgb(125 255 176 / 6%), transparent);
+}
+
+.hal-terminal__input {
+    width: 100%;
+    min-height: 3.2rem;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid rgb(125 255 176 / 35%);
+    border-radius: 5px;
     outline: none;
     resize: vertical;
-    background: transparent;
-    /* Texte transparent : le miroir coloré s'affiche derrière. */
-    color: transparent;
+    background: rgb(0 0 0 / 35%);
+    color: var(--hal-green);
     caret-color: var(--hal-green);
+    text-shadow: 0 0 6px rgb(125 255 176 / 55%);
+    font-family: var(--hal-font-mono);
+    font-size: 1rem;
+    line-height: 1.5;
 }
 
-.hal-terminal__screen::placeholder {
+.hal-terminal__input::placeholder {
     color: rgb(125 255 176 / 32%);
     text-shadow: none;
 }
 
-.hal-terminal__screen:focus-visible {
-    box-shadow: inset 0 0 0 1px rgb(125 255 176 / 45%);
+.hal-terminal__input:focus-visible {
+    border-color: rgb(125 255 176 / 65%);
+    box-shadow: 0 0 0 1px rgb(125 255 176 / 45%);
 }
 
 .hal-terminal__actions {

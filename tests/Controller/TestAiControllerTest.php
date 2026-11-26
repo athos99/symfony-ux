@@ -31,6 +31,17 @@ final class TestAiControllerTest extends WebTestCase
         self::assertSelectorExists('#ai-output');
     }
 
+    public function testPageRendersMarkdownTranscriptScreen(): void
+    {
+        $client = self::createClient();
+        $client->request('GET', '/test_ai');
+
+        // Le transcript est rendu dans une zone dédiée (Markdown côté client),
+        // distincte de la zone de saisie (textarea).
+        self::assertSelectorExists('[data-test-ai-target="screen"]');
+        self::assertSelectorExists('.hal-terminal__composer textarea[data-test-ai-target="terminal"]');
+    }
+
     public function testPageRendersHalConsoleAndReactiveEye(): void
     {
         $client = self::createClient();

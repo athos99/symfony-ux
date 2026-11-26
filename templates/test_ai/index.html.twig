@@ -6,7 +6,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
-        href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Share+Tech+Mono&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Share+Tech+Mono&family=JetBrains+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap"
         rel="stylesheet"
     >
     {{ reprise_entry_link_tags('app') }}
@@ -34,7 +34,7 @@
                     <h1 class="hal-header__title">HAL <span>9000</span></h1>
                 </div>
                 <p class="hal-header__sub">
-                    Heuristically programmed ALgorithmic computer — Mission Apollo 11
+                    Heuristically programmed ALgorithmic computer
                 </p>
                 <ul class="hal-header__meta" aria-hidden="true">
                     <li class="hal-chip">DSKY</li>
@@ -53,6 +53,14 @@
                 <span class="hal-lamp hal-lamp--green"></span>
                 <span class="hal-lamp hal-lamp--blue"></span>
                 <span class="hal-caution__state">NORMAL</span>
+                <div class="hal-zone">
+                    <p
+                        id="ai-status"
+                        class="hal-readout"
+                        data-test-ai-target="status"
+                        aria-live="polite"
+                    >EN ATTENTE</p>
+                </div>
             </div>
 
             <div class="hal-console__grid">
@@ -80,15 +88,6 @@
                                 aria-hidden="true"
                             ></div>
                         </div>
-                    </div>
-
-                    <div class="hal-zone">
-                        <p
-                            id="ai-status"
-                            class="hal-readout"
-                            data-test-ai-target="status"
-                            aria-live="polite"
-                        >EN ATTENTE</p>
                     </div>
 
                     <div class="hal-zone hal-chronos" aria-label="Chronomètres">
@@ -160,28 +159,25 @@
                     </dl>
 
                     <div class="hal-zone hal-temp">
-                        <div class="hal-temp__head">
+                        <div class="hal-temp__row">
                             <label for="ai-temperature" class="hal-temp__label">TEMP</label>
+                            <input
+                                id="ai-temperature"
+                                data-test-ai-target="temperature"
+                                data-action="input->test-ai#updateTemperature"
+                                class="hal-temp__slider"
+                                type="range"
+                                min="0"
+                                max="2"
+                                step="0.1"
+                                value="0.7"
+                                aria-label="Température du modèle"
+                            >
                             <output
                                 class="hal-temp__value"
                                 data-test-ai-target="temperatureValue"
                                 for="ai-temperature"
                             >0.7</output>
-                        </div>
-                        <input
-                            id="ai-temperature"
-                            data-test-ai-target="temperature"
-                            data-action="input->test-ai#updateTemperature"
-                            class="hal-temp__slider"
-                            type="range"
-                            min="0"
-                            max="2"
-                            step="0.1"
-                            value="0.7"
-                            aria-label="Température du modèle"
-                        >
-                        <div class="hal-temp__scale" aria-hidden="true">
-                            <span>0.0</span><span>1.0</span><span>2.0</span>
                         </div>
                     </div>
 
@@ -204,18 +200,23 @@
 
                         <label for="ai-terminal" class="sr-only">Terminal de chat</label>
                         <div class="hal-terminal__field">
-                            {# Miroir coloré derrière le textarea (texte de l'IA en ambre). #}
+                            {# Transcript rendu : demandes en vert, réponses IA en Markdown (ambre). #}
                             <div
-                                class="hal-terminal__mirror"
-                                data-test-ai-target="mirror"
-                                aria-hidden="true"
+                                class="hal-terminal__screen"
+                                data-test-ai-target="screen"
+                                role="log"
+                                aria-label="Conversation"
                             ></div>
+                        </div>
+
+                        <div class="hal-terminal__composer">
+                            <label for="ai-terminal" class="sr-only">Votre demande</label>
                             <textarea
                                 id="ai-terminal"
                                 data-test-ai-target="terminal"
-                                class="hal-terminal__screen"
+                                class="hal-terminal__input"
                                 placeholder="> Écrivez votre demande puis cliquez sur « Envoyer »…"
-                                aria-live="polite"
+                                aria-label="Votre demande"
                                 spellcheck="false"
                             ></textarea>
                         </div>
