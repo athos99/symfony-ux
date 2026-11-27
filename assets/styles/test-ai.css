@@ -218,8 +218,17 @@
 }
 
 /* --- Sélecteur d'agent (boutons-poussoirs lumineux HAL 2000) --------- */
-.hal-agents {
+/* Rangée des cadres « AGENT » et « OPTION » : les deux cadres partagent la
+   même ligne (flex) afin d'optimiser la hauteur de l'en-tête. */
+.hal-header__options {
     flex-basis: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.5rem 1.25rem;
+}
+
+.hal-agents {
     display: flex;
     flex-wrap: wrap;
     align-items: center;

@@ -191,10 +191,10 @@ Fonctionnement :
 
 ## 5quater. Session (mémoire des échanges)
 
-Le bouton **« Session »** (même apparence que les boutons d'agent, dans
-l'en-tête) active la mémorisation des échanges. Toute la gestion est **côté
-serveur**, via la session Symfony (aucune donnée de session n'est stockée dans le
-navigateur).
+Le bouton **« Session »** (même apparence que les boutons d'agent) est placé dans
+un cadre **« OPTION »** distinct du cadre « AGENT », dans l'en-tête. Il active la
+mémorisation des échanges. Toute la gestion est **côté serveur**, via la session
+Symfony (aucune donnée de session n'est stockée dans le navigateur).
 
 - **État initial** : la session est vide (aucun historique).
 - **Enregistrement** : lorsque le mode session est actif, chaque tour

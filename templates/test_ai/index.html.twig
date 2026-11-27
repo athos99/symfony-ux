@@ -44,36 +44,45 @@
                     <li class="hal-chip">LUNAR EAGLE</li>
                 </ul>
 
-                {#
-                    Sélecteur d'agent : chaque bouton correspond à un rôle prédéfini
-                    défini côté PHP (App\Agent::all()). Le frontal ne reçoit que
-                    l'identifiant (data-agent-id) et le nom (libellé) ; la description
-                    de l'agent reste sur le serveur. Un seul bouton peut être actif à
-                    la fois (aria-pressed) ; aucun ne l'est par défaut.
+                {# Les cadres « AGENT » et « OPTION » partagent la même ligne. #}
+                <div class="hal-header__options">
+                    {#
+                        Cadre « AGENT » : chaque bouton correspond à un rôle prédéfini
+                        défini côté PHP (App\Agent::all()). Le frontal ne reçoit que
+                        l'identifiant (data-agent-id) et le nom (libellé) ; la description
+                        de l'agent reste sur le serveur. Un seul bouton peut être actif à
+                        la fois (aria-pressed) ; aucun ne l'est par défaut.
+                    #}
+                    <div class="hal-agents" role="group" aria-label="Choix de l'agent">
+                        <span class="hal-agents__label" aria-hidden="true">AGENT</span>
+                        {% for agent in agents %}
+                            <button
+                                type="button"
+                                class="hal-agent"
+                                data-test-ai-target="agent"
+                                data-agent-id="{{ agent.id }}"
+                                data-action="click->test-ai#selectAgent"
+                                aria-pressed="false"
+                            >{{ agent.name }}</button>
+                        {% endfor %}
+                    </div>
 
-                    Le bouton « Session » (même apparence) active la mémorisation
-                    serveur des requêtes/réponses. La gestion de la session se fait
-                    côté backend (session Symfony).
-                #}
-                <div class="hal-agents" role="group" aria-label="Choix de l'agent et de la session">
-                    <span class="hal-agents__label" aria-hidden="true">AGENT</span>
-                    {% for agent in agents %}
+                    {#
+                        Cadre « OPTION » : options d'exécution. Le bouton « Session »
+                        (même apparence que les boutons d'agent) active la mémorisation
+                        serveur des requêtes/réponses. La gestion de la session se fait
+                        côté backend (session Symfony).
+                    #}
+                    <div class="hal-agents" role="group" aria-label="Options">
+                        <span class="hal-agents__label" aria-hidden="true">OPTION</span>
                         <button
                             type="button"
                             class="hal-agent"
-                            data-test-ai-target="agent"
-                            data-agent-id="{{ agent.id }}"
-                            data-action="click->test-ai#selectAgent"
+                            data-test-ai-target="session"
+                            data-action="click->test-ai#toggleSession"
                             aria-pressed="false"
-                        >{{ agent.name }}</button>
-                    {% endfor %}
-                    <button
-                        type="button"
-                        class="hal-agent"
-                        data-test-ai-target="session"
-                        data-action="click->test-ai#toggleSession"
-                        aria-pressed="false"
-                    >Session</button>
+                        >Session</button>
+                    </div>
                 </div>
             </header>
 
