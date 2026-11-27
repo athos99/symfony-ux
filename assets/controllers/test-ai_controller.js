@@ -18,34 +18,6 @@ const SEGMENTS = {
 const ALL_SEGMENTS = ['a', 'b', 'c', 'd', 'e', 'f', 'g'];
 
 /**
- * Rôles d'agent prédéfinis par le système. La description de l'agent actif est
- * injectée en tête de la requête de l'utilisateur : elle modifie le comportement
- * et la réponse du modèle. Un seul agent peut être actif à la fois (boutons
- * exclusifs dans l'en-tête, aucun actif par défaut).
- */
-const AGENTS = {
-    standard:
-        'Tu es un assistant. Donne des réponses simples en français, avec un ' +
-        'vocabulaire normal et facilement compréhensible. Tes phrases sont ' +
-        'plutôt simples. Tu ne dis pas de mensonges et tu n’inventes rien.',
-    expert:
-        'Tu es un expert arrogant. Tu utilises un vocabulaire incompréhensible, ' +
-        'du charabia technique, des anglicismes et des mots qui impressionnent. ' +
-        'Tu as l’art de faire des phrases creuses et tu rappelles à chaque ' +
-        'instant que tu es le meilleur et que tu as travaillé dans les ' +
-        'meilleures entreprises. Tu es râleur. Tu adores mentir et inventer.',
-    serviteur:
-        'Tu es mon serviteur. Tu es d’une politesse extrême et tu me parles ' +
-        'comme si j’étais un roi ou un président, avec de très belles formules ' +
-        'de politesse. Tes phrases sont élégantes et raffinées. Pour me faire ' +
-        'plaisir, tu es prêt à dire quelques mensonges. Tu utilises un ' +
-        'vocabulaire recherché et tu adores les mots rares et inusités.',
-    poete:
-        'Tu es un poète. Tu t’exprimes uniquement par des rimes et des ' +
-        'alexandrins.',
-};
-
-/**
  * Échappe le HTML brut (la réponse du modèle n'est pas de confiance).
  */
 function escapeHtml(text) {
@@ -100,6 +72,7 @@ export default class extends Controller {
         'status',
         'eye',
         'agent',
+        'session',
         'temperature',
         'temperatureValue',
         'words',
@@ -112,7 +85,7 @@ export default class extends Controller {
         'tokensOut',
         'speed',
     ];
-    static values = { streamUrl: String };
+    static values = { streamUrl: String, sessionUrl: String };
 
     connect() {
         this.abortController = null;
@@ -145,6 +118,9 @@ export default class extends Controller {
         // Agent actif (id du rôle) ou null : sa description est injectée en tête
         // de la requête. Aucun agent n'est actif par défaut.
         this.activeAgent = null;
+        // Mode session : mémorisation serveur des requêtes/réponses (bouton
+        // « Session » de l'en-tête). Désactivé par défaut.
+        this.sessionActive = false;
         this.startClock();
         this.setEyeState('idle');
         this.terminalTarget.addEventListener('input', this.boundInput);
@@ -185,8 +161,8 @@ export default class extends Controller {
     /**
      * Sélectionne un agent (bouton exclusif). Presser le bouton déjà actif le
      * désactive (retour à « aucun agent »). Presser un autre bouton active
-     * celui-ci et désactive les autres. La description de l'agent actif sera
-     * injectée en tête de la prochaine requête.
+     * celui-ci et désactive les autres. Seul l'identifiant de l'agent actif est
+     * transmis au serveur, qui en déduit la description (prompt système).
      */
     selectAgent(event) {
         const button = event.currentTarget;
@@ -210,6 +186,28 @@ export default class extends Controller {
         for (const button of this.agentTargets) {
             const active = button.dataset.agentId === this.activeAgent;
             button.setAttribute('aria-pressed', active ? 'true' : 'false');
+        }
+    }
+
+    /**
+     * Active/désactive le mode session (bouton « Session »). Lorsqu'il est actif,
+     * le serveur mémorise les requêtes et les réponses et les renvoie en contexte
+     * à chaque nouvel appel.
+     */
+    toggleSession() {
+        this.sessionActive = !this.sessionActive;
+        this.renderSession();
+    }
+
+    /**
+     * Reflète l'état du mode session sur le bouton (aria-pressed + style lumineux).
+     */
+    renderSession() {
+        if (this.hasSessionTarget) {
+            this.sessionTarget.setAttribute(
+                'aria-pressed',
+                this.sessionActive ? 'true' : 'false',
+            );
         }
     }
 
@@ -506,11 +504,12 @@ export default class extends Controller {
             ? Number.parseFloat(this.temperatureTarget.value)
             : 0.7;
 
-        // Description de l'agent actif (rôle prédéfini), injectée en tête de la
-        // requête pour modifier le comportement du modèle. Le transcript, lui,
-        // conserve la demande brute de l'utilisateur.
-        const agent = this.activeAgent ? AGENTS[this.activeAgent] : null;
-        const payloadMessage = agent ? `${agent}\n\n${request}` : request;
+        // Agent actif : seul son identifiant est transmis au serveur, qui en
+        // déduit la description (prompt système). Le transcript conserve la
+        // demande brute de l'utilisateur. Le drapeau « session » indique au
+        // serveur d'inclure l'historique mémorisé et d'enregistrer ce tour.
+        const agent = this.activeAgent;
+        const session = this.sessionActive;
 
         this.abortController = new AbortController();
 
@@ -521,7 +520,12 @@ export default class extends Controller {
                     'Content-Type': 'application/json',
                     Accept: 'text/event-stream',
                 },
-                body: JSON.stringify({ message: payloadMessage, temperature }),
+                body: JSON.stringify({
+                    message: request,
+                    agent,
+                    session,
+                    temperature,
+                }),
                 signal: this.abortController.signal,
             });
 
@@ -714,9 +718,11 @@ export default class extends Controller {
 
     /**
      * Vide le terminal et la zone de sortie (seul moyen d'effacer le texte).
+     * La session serveur est également effacée (bouton « Effacer »).
      */
     reset() {
         this.cancel();
+        this.clearSession();
         this.blocks = [];
         this.terminalTarget.value = '';
         this.answerLength = 0;
@@ -734,6 +740,22 @@ export default class extends Controller {
         this.setStatus('EN ATTENTE');
         this.setEyeState('idle');
         this.renderScreen();
+    }
+
+    /**
+     * Demande au serveur d'effacer l'historique de la session. Appel « fire and
+     * forget » : le reset du terminal est immédiat, sans attendre la réponse.
+     */
+    clearSession() {
+        if (!this.hasSessionUrlValue) {
+            return;
+        }
+        fetch(this.sessionUrlValue, {
+            method: 'POST',
+            headers: { Accept: 'application/json' },
+        }).catch(() => {
+            // Une erreur d'effacement ne doit pas bloquer le reset local.
+        });
     }
 
     /**

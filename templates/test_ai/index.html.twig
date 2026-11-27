@@ -22,6 +22,7 @@
         class="hal-console"
         data-controller="test-ai"
         data-test-ai-stream-url-value="{{ path('app_test_ai_stream') }}"
+        data-test-ai-session-url-value="{{ path('app_test_ai_session_clear') }}"
     >
         <div class="hal-console__stars" aria-hidden="true"></div>
         <div class="hal-console__grid-bg" aria-hidden="true"></div>
@@ -45,44 +46,34 @@
 
                 {#
                     Sélecteur d'agent : chaque bouton correspond à un rôle prédéfini
-                    dont la description est injectée dans la requête de l'utilisateur
-                    (voir AGENTS dans le contrôleur Stimulus). Un seul bouton peut être
-                    actif à la fois (aria-pressed) ; aucun ne l'est par défaut.
+                    défini côté PHP (App\Agent::all()). Le frontal ne reçoit que
+                    l'identifiant (data-agent-id) et le nom (libellé) ; la description
+                    de l'agent reste sur le serveur. Un seul bouton peut être actif à
+                    la fois (aria-pressed) ; aucun ne l'est par défaut.
+
+                    Le bouton « Session » (même apparence) active la mémorisation
+                    serveur des requêtes/réponses. La gestion de la session se fait
+                    côté backend (session Symfony).
                 #}
-                <div class="hal-agents" role="group" aria-label="Choix de l'agent">
+                <div class="hal-agents" role="group" aria-label="Choix de l'agent et de la session">
                     <span class="hal-agents__label" aria-hidden="true">AGENT</span>
+                    {% for agent in agents %}
+                        <button
+                            type="button"
+                            class="hal-agent"
+                            data-test-ai-target="agent"
+                            data-agent-id="{{ agent.id }}"
+                            data-action="click->test-ai#selectAgent"
+                            aria-pressed="false"
+                        >{{ agent.name }}</button>
+                    {% endfor %}
                     <button
                         type="button"
                         class="hal-agent"
-                        data-test-ai-target="agent"
-                        data-agent-id="standard"
-                        data-action="click->test-ai#selectAgent"
+                        data-test-ai-target="session"
+                        data-action="click->test-ai#toggleSession"
                         aria-pressed="false"
-                    >Standard</button>
-                    <button
-                        type="button"
-                        class="hal-agent"
-                        data-test-ai-target="agent"
-                        data-agent-id="expert"
-                        data-action="click->test-ai#selectAgent"
-                        aria-pressed="false"
-                    >Expert</button>
-                    <button
-                        type="button"
-                        class="hal-agent"
-                        data-test-ai-target="agent"
-                        data-agent-id="serviteur"
-                        data-action="click->test-ai#selectAgent"
-                        aria-pressed="false"
-                    >Serviteur</button>
-                    <button
-                        type="button"
-                        class="hal-agent"
-                        data-test-ai-target="agent"
-                        data-agent-id="poete"
-                        data-action="click->test-ai#selectAgent"
-                        aria-pressed="false"
-                    >Poète</button>
+                    >Session</button>
                 </div>
             </header>
 

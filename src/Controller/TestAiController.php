@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Agent;
 use Symfony\AI\Agent\AgentInterface;
 use Symfony\AI\Platform\Message\Message;
 use Symfony\AI\Platform\Message\MessageBag;
@@ -14,6 +15,9 @@ use Symfony\Component\HttpFoundation\EventStreamResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\ServerEvent;
+use Symfony\Component\HttpFoundation\Session\Session;
+use Symfony\Component\HttpFoundation\Session\SessionInterface;
+use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
 use Symfony\Component\Routing\Attribute\Route;
 
 /**
@@ -32,12 +36,28 @@ use Symfony\Component\Routing\Attribute\Route;
 final class TestAiController extends AbstractController
 {
     /**
+     * Prompt système utilisé lorsqu'aucun agent n'est sélectionné.
+     */
+    private const string DEFAULT_SYSTEM_PROMPT = 'Tu es un assistant de démonstration. Réponds de façon concise et pédagogique.';
+
+    /**
+     * Clé de session stockant l'historique des tours (requête + réponse).
+     */
+    private const string SESSION_KEY = 'test_ai.history';
+
+    /**
      * Page de la démo : affiche le terminal de chat.
+     *
+     * La liste des agents (identifiant, nom, description) est définie côté PHP
+     * dans {@see Agent::all()} et transmise à la vue : le frontal ne reçoit que
+     * les identifiants et les noms.
      */
     #[Route('/test_ai', name: 'app_test_ai')]
     public function index(): Response
     {
-        return $this->render('test_ai/index.html.twig');
+        return $this->render('test_ai/index.html.twig', [
+            'agents' => Agent::all(),
+        ]);
     }
 
     /**
@@ -63,23 +83,49 @@ final class TestAiController extends AbstractController
         // Température du modèle (0.0 → 2.0), bornée côté serveur.
         $temperature = $this->extractTemperature($request);
 
-        // On neutralise la session le temps du streaming (voir docblock).
-        $actualSession = $request->getSession();
-        $request->setSession(new \Symfony\Component\HttpFoundation\Session\Session(
-            new \Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage(),
-        ));
+        // Agent sélectionné par le frontal (identifiant technique). La description
+        // (prompt système) est résolue côté serveur à partir de {@see Agent::all()} :
+        // le client ne transmet que la valeur de l'agent, jamais sa description.
+        $agent = Agent::find($this->extractAgent($request));
+        $systemPrompt = self::DEFAULT_SYSTEM_PROMPT;
+        if ($agent instanceof Agent) {
+            $systemPrompt = $agent->prompt;
+        }
 
-        return new EventStreamResponse(function () use ($request, $actualSession, $default, $message, $temperature) {
+        // Mode session : le client indique s'il faut activer la mémorisation
+        // (bouton « Session » de l'en-tête). La gestion de la session est
+        // entièrement côté serveur, via la session Symfony.
+        $sessionEnabled = $this->extractSessionEnabled($request);
+
+        // On lit l'historique de la session (requêtes + réponses) AVANT de
+        // neutraliser la session pour le streaming.
+        $actualSession = $request->getSession();
+        $history = $sessionEnabled ? $this->getHistory($actualSession) : [];
+
+        // En mode session, on démarre la session AVANT le streaming : le cookie
+        // de session est ainsi envoyé avec les en-têtes de la réponse, ce qui
+        // permet de la sauvegarder en fin de flux sans « headers already sent ».
+        if ($sessionEnabled) {
+            $actualSession->start();
+        }
+
+        // Construction du contexte envoyé au modèle : description de l'agent
+        // (message système), puis les tours enregistrés de la session, et enfin
+        // la question courante de l'utilisateur.
+        $messages = new MessageBag(Message::forSystem($systemPrompt));
+        foreach ($history as $turn) {
+            $messages->add(Message::ofUser($turn['user']));
+            $messages->add(Message::ofAssistant($turn['assistant']));
+        }
+        $messages->add(Message::ofUser($message));
+
+        // On neutralise la session le temps du streaming (voir docblock).
+        $request->setSession(new Session(new MockArraySessionStorage()));
+
+        return new EventStreamResponse(function () use ($request, $actualSession, $default, $message, $temperature, $messages, $sessionEnabled) {
             // On restaure la vraie session à l'intérieur du générateur, une fois
             // la réponse partie.
             $request->setSession($actualSession);
-
-            // Construction du sac de messages : un message système (rôle du bot)
-            // + la demande de l'utilisateur.
-            $messages = new MessageBag(
-                Message::forSystem('Tu es un assistant de démonstration. Réponds de façon concise et pédagogique.'),
-                Message::ofUser($message),
-            );
 
             // Appel de l'agent en mode streamé : l'Execution est paresseuse,
             // les fragments arrivent au fur et à mesure. On plafonne max_tokens
@@ -87,6 +133,7 @@ final class TestAiController extends AbstractController
             // des plateformes à crédits limités. La température est transmise
             // telle quelle au modèle (option standard de Symfony AI).
             $execution = null;
+            $accumulated = '';
             try {
                 $execution = $default->call($messages, [
                     'stream' => true,
@@ -94,7 +141,6 @@ final class TestAiController extends AbstractController
                     'temperature' => $temperature,
                 ]);
 
-                $accumulated = '';
                 foreach ($execution->asStream() as $delta) {
                     // On ne s'intéresse qu'aux fragments de texte (et non aux
                     // fragments de « réflexion » ou d'outils).
@@ -118,12 +164,23 @@ final class TestAiController extends AbstractController
                 // En cas d'erreur (crédits épuisés, réseau, modèle indisponible…),
                 // on pousse un message d'erreur dans le terminal plutôt qu'une page
                 // d'erreur HTML inexploitable par le client SSE.
+                $accumulated = 'Erreur de l’IA : '.$e->getMessage();
                 yield new ServerEvent(
                     $this->renderBlockView('test_ai/_stream.html.twig', 'update', [
-                        'text' => 'Erreur de l’IA : '.$e->getMessage(),
+                        'text' => $accumulated,
                     ]),
                     'message',
                 );
+            }
+
+            // Fin du tour : on enregistre la requête et la réponse dans la session
+            // (uniquement si le mode session est actif). La session ayant déjà été
+            // démarrée avant le streaming, on la sauvegarde explicitement ici.
+            if ($sessionEnabled) {
+                $history = $this->getHistory($actualSession);
+                $history[] = ['user' => $message, 'assistant' => $accumulated];
+                $actualSession->set(self::SESSION_KEY, $history);
+                $actualSession->save();
             }
 
             // Télémétrie finale : modèle employé et bilan des tokens (émis = prompt,
@@ -147,6 +204,19 @@ final class TestAiController extends AbstractController
     }
 
     /**
+     * Efface l'historique de la session (bouton « Effacer »).
+     */
+    #[Route('/test_ai/session/clear', name: 'app_test_ai_session_clear', methods: ['POST'])]
+    public function clearSession(Request $request): Response
+    {
+        $session = $request->getSession();
+        $session->remove(self::SESSION_KEY);
+        $session->save();
+
+        return new Response('', Response::HTTP_NO_CONTENT);
+    }
+
+    /**
      * Extrait la demande du client (corps JSON ou champ de formulaire).
      */
     private function extractMessage(Request $request): string
@@ -160,6 +230,66 @@ final class TestAiController extends AbstractController
         }
 
         return trim((string) $request->request->get('message', ''));
+    }
+
+    /**
+     * Extrait l'identifiant de l'agent choisi (corps JSON ou champ de formulaire).
+     * Retourne null lorsqu'aucun agent n'est fourni.
+     */
+    private function extractAgent(Request $request): ?string
+    {
+        $content = $request->getContent();
+        if ('' !== $content) {
+            $data = json_decode($content, true);
+            if (\is_array($data) && isset($data['agent']) && \is_string($data['agent'])) {
+                return $data['agent'];
+            }
+        }
+
+        $agent = $request->request->get('agent');
+
+        return \is_string($agent) && '' !== $agent ? $agent : null;
+    }
+
+    /**
+     * Indique si le mode session est actif (corps JSON ou champ de formulaire).
+     */
+    private function extractSessionEnabled(Request $request): bool
+    {
+        $content = $request->getContent();
+        if ('' !== $content) {
+            $data = json_decode($content, true);
+            if (\is_array($data) && isset($data['session'])) {
+                return (bool) $data['session'];
+            }
+        }
+
+        return $request->request->getBoolean('session');
+    }
+
+    /**
+     * Historique des tours enregistrés dans la session.
+     *
+     * @return list<array{user: string, assistant: string}>
+     */
+    private function getHistory(SessionInterface $session): array
+    {
+        $history = $session->get(self::SESSION_KEY, []);
+        if (!\is_array($history)) {
+            return [];
+        }
+
+        $turns = [];
+        foreach ($history as $turn) {
+            if (\is_array($turn)
+                && isset($turn['user'], $turn['assistant'])
+                && \is_string($turn['user'])
+                && \is_string($turn['assistant'])) {
+                $turns[] = ['user' => $turn['user'], 'assistant' => $turn['assistant']];
+            }
+        }
+
+        return $turns;
     }
 
     /**

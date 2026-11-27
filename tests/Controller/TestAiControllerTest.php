@@ -4,9 +4,15 @@ declare(strict_types=1);
 
 namespace App\Tests\Controller;
 
+use App\Agent;
 use App\Tests\Mock\StreamingAgent;
+use Symfony\AI\Platform\Message\Content\Text;
+use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\Session\Session;
+use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
 
 final class TestAiControllerTest extends WebTestCase
 {
@@ -72,11 +78,109 @@ final class TestAiControllerTest extends WebTestCase
 
         // Le sélecteur d'agent de l'en-tête expose un bouton par rôle prédéfini,
         // tous inactifs par défaut (aria-pressed="false").
-        foreach (['standard', 'expert', 'serviteur', 'poete'] as $id) {
+        foreach (Agent::all() as $agent) {
             self::assertSelectorExists(
-                sprintf('button[data-test-ai-target="agent"][data-agent-id="%s"][aria-pressed="false"]', $id),
+                sprintf('button[data-test-ai-target="agent"][data-agent-id="%s"][aria-pressed="false"]', $agent->id),
             );
         }
+    }
+
+    public function testPageRendersAgentNamesFromPhpDefinitions(): void
+    {
+        $client = self::createClient();
+        $client->request('GET', '/test_ai');
+
+        // Les boutons d'agent sont générés depuis les définitions PHP (App\Agent) :
+        // chaque identifiant est associé à son nom affichable.
+        foreach (Agent::all() as $agent) {
+            self::assertSelectorTextContains(
+                sprintf('button[data-test-ai-target="agent"][data-agent-id="%s"]', $agent->id),
+                $agent->name,
+            );
+        }
+    }
+
+    public function testPageRendersSessionToggleButton(): void
+    {
+        $client = self::createClient();
+        $client->request('GET', '/test_ai');
+
+        // Le bouton « Session » (même apparence que les boutons d'agent) active
+        // la mémorisation serveur ; inactif par défaut.
+        self::assertSelectorExists(
+            'button[data-test-ai-target="session"][aria-pressed="false"]',
+        );
+        self::assertSelectorTextContains(
+            'button[data-test-ai-target="session"]',
+            'Session',
+        );
+    }
+
+    public function testStreamEndpointUsesSelectedAgentPromptAsSystemMessage(): void
+    {
+        StreamingAgent::$lastInput = null;
+
+        $kernel = self::bootKernel();
+        $request = Request::create(
+            '/test_ai/stream',
+            'POST',
+            [],
+            [],
+            [],
+            ['CONTENT_TYPE' => 'application/json'],
+            (string) json_encode(['message' => 'Bonjour', 'agent' => 'expert']),
+        );
+
+        $response = $kernel->handle($request);
+        ob_start();
+        $response->sendContent();
+        ob_end_clean();
+
+        // Le serveur résout la description de l'agent à partir de son identifiant :
+        // le message système correspond au prompt de l'agent « expert ».
+        $input = StreamingAgent::lastInput();
+        self::assertInstanceOf(MessageBag::class, $input);
+
+        $system = $input->getSystemMessage();
+        self::assertNotNull($system);
+        self::assertSame(Agent::find('expert')?->prompt, $system->getContent());
+
+        // Le message utilisateur reste la demande brute : aucune description
+        // d'agent n'est injectée côté frontal.
+        $user = $input->getUserMessage();
+        self::assertNotNull($user);
+        $content = $user->getContent();
+        self::assertCount(1, $content);
+        self::assertInstanceOf(Text::class, $content[0]);
+        self::assertSame('Bonjour', $content[0]->getText());
+    }
+
+    public function testStreamEndpointFallsBackToDefaultPromptWithoutAgent(): void
+    {
+        StreamingAgent::$lastInput = null;
+
+        $kernel = self::bootKernel();
+        $request = Request::create(
+            '/test_ai/stream',
+            'POST',
+            [],
+            [],
+            [],
+            ['CONTENT_TYPE' => 'application/json'],
+            (string) json_encode(['message' => 'Bonjour']),
+        );
+
+        $response = $kernel->handle($request);
+        ob_start();
+        $response->sendContent();
+        ob_end_clean();
+
+        // Sans agent sélectionné, le prompt système de démonstration est utilisé.
+        $input = StreamingAgent::lastInput();
+        self::assertInstanceOf(MessageBag::class, $input);
+        $system = $input->getSystemMessage();
+        self::assertNotNull($system);
+        self::assertStringContainsString('assistant de démonstration', (string) $system->getContent());
     }
 
     public function testPageRendersFourChronometersInitialisedToZero(): void
@@ -217,5 +321,136 @@ final class TestAiControllerTest extends WebTestCase
         self::assertSame(12, $usage['prompt']);
         self::assertSame(34, $usage['completion']);
         self::assertSame(46, $usage['total']);
+    }
+
+    public function testStreamEndpointIncludesSessionHistoryInContext(): void
+    {
+        StreamingAgent::$lastInput = null;
+
+        $kernel = self::bootKernel();
+        $request = Request::create(
+            '/test_ai/stream',
+            'POST',
+            [],
+            [],
+            [],
+            ['CONTENT_TYPE' => 'application/json'],
+            (string) json_encode(['message' => 'Question 2', 'agent' => 'expert', 'session' => true]),
+        );
+        $session = new Session(new MockArraySessionStorage());
+        $session->set('test_ai.history', [
+            ['user' => 'Question 1', 'assistant' => 'Réponse 1'],
+        ]);
+        $request->setSession($session);
+
+        $response = $kernel->handle($request);
+        ob_start();
+        $response->sendContent();
+        ob_end_clean();
+
+        // Contexte reconstruit : système (agent) + historique (user/assistant) +
+        // question courante, soit 4 messages.
+        $input = StreamingAgent::lastInput();
+        self::assertInstanceOf(MessageBag::class, $input);
+        $messages = $input->getMessages();
+        self::assertCount(4, $messages);
+
+        $system = $input->getSystemMessage();
+        self::assertNotNull($system);
+        self::assertSame(Agent::find('expert')?->prompt, $system->getContent());
+
+        $historyUser = $messages[1]->getContent();
+        self::assertIsArray($historyUser);
+        self::assertInstanceOf(Text::class, $historyUser[0]);
+        self::assertSame('Question 1', $historyUser[0]->getText());
+
+        $currentUser = $messages[3]->getContent();
+        self::assertIsArray($currentUser);
+        self::assertInstanceOf(Text::class, $currentUser[0]);
+        self::assertSame('Question 2', $currentUser[0]->getText());
+    }
+
+    public function testStreamEndpointRecordsTurnInSessionWhenEnabled(): void
+    {
+        StreamingAgent::$lastInput = null;
+
+        $kernel = self::bootKernel();
+        $request = Request::create(
+            '/test_ai/stream',
+            'POST',
+            [],
+            [],
+            [],
+            ['CONTENT_TYPE' => 'application/json'],
+            (string) json_encode(['message' => 'Bonjour', 'session' => true]),
+        );
+        $session = new Session(new MockArraySessionStorage());
+        $request->setSession($session);
+
+        $response = $kernel->handle($request);
+        ob_start();
+        $response->sendContent();
+        ob_end_clean();
+
+        // Le tour (requête + réponse) est enregistré dans la session.
+        $history = $session->get('test_ai.history');
+        self::assertIsArray($history);
+        self::assertCount(1, $history);
+        $turn = $history[0];
+        self::assertIsArray($turn);
+        self::assertSame('Bonjour', $turn['user']);
+        self::assertSame('Bonjour, monde !', $turn['assistant']);
+    }
+
+    public function testStreamEndpointIgnoresSessionWhenDisabled(): void
+    {
+        StreamingAgent::$lastInput = null;
+
+        $kernel = self::bootKernel();
+        $request = Request::create(
+            '/test_ai/stream',
+            'POST',
+            [],
+            [],
+            [],
+            ['CONTENT_TYPE' => 'application/json'],
+            (string) json_encode(['message' => 'Bonjour', 'session' => false]),
+        );
+        $session = new Session(new MockArraySessionStorage());
+        $session->set('test_ai.history', [
+            ['user' => 'Ancienne question', 'assistant' => 'Ancienne réponse'],
+        ]);
+        $request->setSession($session);
+
+        $response = $kernel->handle($request);
+        ob_start();
+        $response->sendContent();
+        ob_end_clean();
+
+        // Sans session : contexte système + question courante uniquement, et
+        // l'historique préexistant reste inchangé.
+        $input = StreamingAgent::lastInput();
+        self::assertInstanceOf(MessageBag::class, $input);
+        self::assertCount(2, $input->getMessages());
+        self::assertSame(
+            [['user' => 'Ancienne question', 'assistant' => 'Ancienne réponse']],
+            $session->get('test_ai.history'),
+        );
+    }
+
+    public function testSessionClearEndpointEmptiesHistory(): void
+    {
+        $kernel = self::bootKernel();
+        $request = Request::create('/test_ai/session/clear', 'POST');
+        $session = new Session(new MockArraySessionStorage());
+        $session->set('test_ai.history', [
+            ['user' => 'Question', 'assistant' => 'Réponse'],
+        ]);
+        $request->setSession($session);
+
+        $response = $kernel->handle($request);
+
+        self::assertSame(Response::HTTP_NO_CONTENT, $response->getStatusCode());
+        self::assertSame([], $session->get('test_ai.history', []));
     }
 }

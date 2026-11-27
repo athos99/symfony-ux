@@ -27,6 +27,7 @@ Navigateur (Stimulus)                Serveur (Symfony)
 | `config/packages/ai.yaml` | Configuration du bundle AI (plateforme OpenRouter + agent `default`). |
 | `composer.json` | Ajout de `symfony/ai-bundle`, `symfony/ai-agent`, `symfony/ai-open-router-platform`. |
 | `src/Controller/TestAiController.php` | Page + endpoint SSE de streaming. |
+| `src/Agent.php` | Définition des rôles d'agent (identifiant, nom, description). |
 | `templates/test_ai/index.html.twig` | Page du terminal (textarea + boutons + zone Turbo). |
 | `templates/test_ai/_stream.html.twig` | Fragments Turbo Stream (`update` / `end`). |
 | `assets/controllers/test-ai_controller.js` | Contrôleur Stimulus (fetch SSE + rendu Turbo). |
@@ -157,26 +158,59 @@ direct le contenu de `#ai-output` (la réponse cumulée poussée par Turbo).
 ## 5ter. Sélecteur d'agent (rôles prédéfinis)
 
 Dans la zone d'en-tête, une rangée de boutons-poussoirs lumineux (style HAL 2000)
-permet de choisir un **agent** parmi des rôles prédéfinis par le système :
+permet de choisir un **agent** parmi des rôles prédéfinis :
 
 | Agent | Comportement |
 | --- | --- |
 | **Standard** | Réponses simples en français, vocabulaire normal, phrases simples, ne ment pas. |
 | **Expert** | Arrogant, charabia technique, anglicismes, phrases creuses, se vante, râleur, ment et invente. |
-| **Serviteur** | Politesse extrême, formules raffinées, vocabulaire recherché, prêt à mentir pour plaire. |
+| **Érudit** | Érudit galant et distingué, politesse extrême, flatteur, écriture inclusive de politesse, vocabulaire recherché, prêt à mentir pour plaire. |
 | **Poète** | S'exprime uniquement par des rimes et des alexandrins. |
 
 Fonctionnement :
 
-- Les descriptions des agents sont définies dans la constante `AGENTS` du
-  contrôleur Stimulus (`assets/controllers/test-ai_controller.js`).
+- Les agents sont définis **côté PHP** dans la classe `App\Agent`
+  (`src/Agent.php`) : chaque agent porte un identifiant technique (`id`), un nom
+  affichable (`name`) et une description (`prompt`, prompt système). La liste
+  est exposée par `Agent::all()` et retrouvée par `Agent::find($id)`.
+- Le contrôleur `index()` transmet la liste des agents à la vue ; le template
+  génère un bouton par agent (`data-agent-id` = identifiant, libellé = nom). Le
+  frontal ne connaît donc que les **identifiants** et les **noms**, jamais les
+  descriptions.
 - Les boutons sont **exclusifs** : un seul peut être actif à la fois. Presser le
   bouton actif le désactive (retour à « aucun agent ») ; presser un autre bouton
   active celui-ci et désactive les autres. Aucun n'est actif par défaut.
 - L'état actif est porté par `aria-pressed` (accessibilité + style lumineux).
-- À l'envoi, la description de l'agent actif est **injectée en tête de la
-  requête** (`description + « \n\n » + demande`) : elle modifie le comportement
-  et la réponse du modèle. Le transcript, lui, conserve la demande brute.
+- À l'envoi, le frontal transmet **uniquement la valeur de l'agent**
+  (`{"message": …, "agent": "<id>", "session": <bool>, "temperature": …}`) : la
+  demande n'est plus préfixée par la description. C'est le serveur
+  (`streamResponse()`) qui résout l'agent via `Agent::find()` et injecte sa
+  description comme **message système**. Sans agent sélectionné, le prompt de
+  démonstration par défaut est utilisé. Le transcript, lui, conserve la demande
+  brute.
+
+## 5quater. Session (mémoire des échanges)
+
+Le bouton **« Session »** (même apparence que les boutons d'agent, dans
+l'en-tête) active la mémorisation des échanges. Toute la gestion est **côté
+serveur**, via la session Symfony (aucune donnée de session n'est stockée dans le
+navigateur).
+
+- **État initial** : la session est vide (aucun historique).
+- **Enregistrement** : lorsque le mode session est actif, chaque tour
+  (requête de l'utilisateur + réponse de l'IA) est enregistré dans la session
+  Symfony (clé `test_ai.history`).
+- **Contexte envoyé au modèle** : à chaque requête, le serveur reconstruit le
+  contexte dans l'ordre : **description de l'agent** (message système), **tours
+  enregistrés** de la session (user/assistant), puis **question courante** de
+  l'utilisateur.
+- **Effacer** : le bouton « Effacer » appelle l'endpoint
+  `POST /test_ai/session/clear` (`clearSession()`), qui vide l'historique de la
+  session, en plus de réinitialiser le terminal côté client.
+- **Détail streaming** : la session réelle est démarrée **avant** le streaming
+  (cookie envoyé avec les en-têtes), puis sauvegardée explicitement en fin de
+  flux ; pendant le streaming, la session est remplacée par une session factice
+  (voir plus haut) pour éviter l'erreur « headers already sent ».
 
 ## 5bis. Chronomètres (afficheurs 7 segments)
 

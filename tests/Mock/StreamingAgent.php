@@ -28,6 +28,11 @@ final class StreamingAgent implements AgentInterface
     public static array $lastOptions = [];
 
     /**
+     * Dernière entrée reçue par le faux agent (pour les assertions de test).
+     */
+    public static string|MessageBag|UserMessage|null $lastInput = null;
+
+    /**
      * @return array<string, mixed>
      */
     public static function lastOptions(): array
@@ -35,9 +40,15 @@ final class StreamingAgent implements AgentInterface
         return self::$lastOptions;
     }
 
+    public static function lastInput(): string|MessageBag|UserMessage|null
+    {
+        return self::$lastInput;
+    }
+
     public function call(string|MessageBag|UserMessage $input, array $options = []): Execution
     {
         self::$lastOptions = $options;
+        self::$lastInput = $input;
 
         // Fragments renvoyés « au fil de l'eau » par le faux modèle.
         $fragments = ['Bon', 'jour', ', ', 'monde', ' !'];
