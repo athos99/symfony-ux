@@ -42,6 +42,48 @@
                     <li class="hal-chip">TELEMETRY</li>
                     <li class="hal-chip">LUNAR EAGLE</li>
                 </ul>
+
+                {#
+                    Sélecteur d'agent : chaque bouton correspond à un rôle prédéfini
+                    dont la description est injectée dans la requête de l'utilisateur
+                    (voir AGENTS dans le contrôleur Stimulus). Un seul bouton peut être
+                    actif à la fois (aria-pressed) ; aucun ne l'est par défaut.
+                #}
+                <div class="hal-agents" role="group" aria-label="Choix de l'agent">
+                    <span class="hal-agents__label" aria-hidden="true">AGENT</span>
+                    <button
+                        type="button"
+                        class="hal-agent"
+                        data-test-ai-target="agent"
+                        data-agent-id="standard"
+                        data-action="click->test-ai#selectAgent"
+                        aria-pressed="false"
+                    >Standard</button>
+                    <button
+                        type="button"
+                        class="hal-agent"
+                        data-test-ai-target="agent"
+                        data-agent-id="expert"
+                        data-action="click->test-ai#selectAgent"
+                        aria-pressed="false"
+                    >Expert</button>
+                    <button
+                        type="button"
+                        class="hal-agent"
+                        data-test-ai-target="agent"
+                        data-agent-id="serviteur"
+                        data-action="click->test-ai#selectAgent"
+                        aria-pressed="false"
+                    >Serviteur</button>
+                    <button
+                        type="button"
+                        class="hal-agent"
+                        data-test-ai-target="agent"
+                        data-agent-id="poete"
+                        data-action="click->test-ai#selectAgent"
+                        aria-pressed="false"
+                    >Poète</button>
+                </div>
             </header>
 
             <div class="hal-caution" aria-hidden="true">
@@ -243,6 +285,39 @@
             </div>
 
             <footer class="hal-footer" aria-hidden="true">
+                {# Télémétrie du modèle : nom, tokens émis (prompt) / reçus (complétion)
+                   et débit (tokens reçus par seconde), alimentés par l'événement SSE
+                   « usage » puis animés à la manière d'un pupitre HAL 9000. #}
+                <div class="hal-caution__telemetry">
+                    <div class="hal-caution__item hal-caution__item--model">
+                        <span class="hal-caution__key">MODÈLE</span>
+                        <span
+                            class="hal-caution__value hal-caution__value--model"
+                            data-test-ai-target="model"
+                        >—</span>
+                    </div>
+                    <div class="hal-caution__item">
+                        <span class="hal-caution__key">TOKENS ÉMIS</span>
+                        <span
+                            class="hal-caution__value"
+                            data-test-ai-target="tokensIn"
+                        >0</span>
+                    </div>
+                    <div class="hal-caution__item">
+                        <span class="hal-caution__key">TOKENS REÇUS</span>
+                        <span
+                            class="hal-caution__value"
+                            data-test-ai-target="tokensOut"
+                        >0</span>
+                    </div>
+                    <div class="hal-caution__item">
+                        <span class="hal-caution__key">DÉBIT · TOK/S</span>
+                        <span
+                            class="hal-caution__value"
+                            data-test-ai-target="speed"
+                        >0.0</span>
+                    </div>
+                </div>
                 <span class="hal-footer__item"><i class="hal-led"></i> SYS OK</span>
                 <span class="hal-footer__item">SECTOR 21</span>
                 <span class="hal-footer__item">UPLINK 1.2 kB/s</span>

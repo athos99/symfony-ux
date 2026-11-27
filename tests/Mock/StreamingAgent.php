@@ -12,6 +12,7 @@ use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\Message\UserMessage;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
 use Symfony\AI\Platform\Result\TextResult;
+use Symfony\AI\Platform\TokenUsage\TokenUsage;
 
 /**
  * Double d'agent IA pour les tests : ne réalise aucun appel réseau et renvoie un
@@ -49,7 +50,17 @@ final class StreamingAgent implements AgentInterface
                 yield new Progress(Progress::STAGE_DELTA, 'Fragment reçu.', new TextDelta($fragment));
             }
 
-            yield new ResultUpdate(new TextResult($text));
+            // Métadonnée de télémétrie : le bilan des tokens est agrégé par la
+            // plateforme et lu par le contrôleur pour alimenter le pupitre HAL.
+            $result = new TextResult($text);
+            $result->getMetadata()->add('token_usage', new TokenUsage(
+                promptTokens: 12,
+                completionTokens: 34,
+                totalTokens: 46,
+                model: 'openrouter/auto',
+            ));
+
+            yield new ResultUpdate($result);
         }, true);
     }
 

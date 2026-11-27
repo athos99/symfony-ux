@@ -217,6 +217,112 @@
     background: rgb(47 107 216 / 8%);
 }
 
+/* --- Sélecteur d'agent (boutons-poussoirs lumineux HAL 2000) --------- */
+.hal-agents {
+    flex-basis: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    padding-top: 0.75rem;
+    margin-top: 0.15rem;
+    border-top: 1px solid var(--hal-line);
+}
+
+.hal-agents__label {
+    font-family: var(--hal-font-display);
+    font-size: 0.56rem;
+    letter-spacing: 0.2em;
+    color: var(--hal-muted);
+    margin-right: 0.2rem;
+}
+
+.hal-agent {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.4rem 0.85rem 0.4rem 0.7rem;
+    font-family: var(--hal-font-display);
+    font-weight: 700;
+    font-size: 0.62rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--hal-muted);
+    border: 1px solid var(--hal-line-strong);
+    border-radius: 5px;
+    background: linear-gradient(180deg, #f4f7f8, #c3ccd1);
+    box-shadow:
+        inset 0 1px 0 #fff,
+        0 2px 4px rgb(27 36 41 / 22%);
+    cursor: pointer;
+    transition:
+        transform 120ms ease,
+        filter 120ms ease,
+        box-shadow 160ms ease,
+        color 160ms ease;
+}
+
+/* Voyant lumineux à gauche du libellé : éteint par défaut. */
+.hal-agent::before {
+    content: '';
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    border: 1px solid rgb(27 36 41 / 45%);
+    background: radial-gradient(
+        circle at 38% 32%,
+        #e9eef1,
+        #9aa5ab 70%,
+        #6b767c
+    );
+    box-shadow: inset 0 1px 2px rgb(27 36 41 / 45%);
+    transition:
+        background 160ms ease,
+        box-shadow 160ms ease;
+}
+
+.hal-agent:hover:not([aria-pressed='true']) {
+    filter: brightness(1.05);
+    transform: translateY(-1px);
+}
+
+.hal-agent:active:not([aria-pressed='true']) {
+    transform: translateY(1px);
+}
+
+.hal-agent:focus-visible {
+    outline: 2px solid var(--hal-blue);
+    outline-offset: 2px;
+}
+
+/* Bouton actif : le voyant s'allume en rouge HAL et le bouton devient
+   lumineux (halo rouge), comme un pupitre 2001. */
+.hal-agent[aria-pressed='true'] {
+    color: #fff;
+    border-color: #ff8a7a;
+    background: linear-gradient(180deg, #ff3b30 0%, #b00000 100%);
+    box-shadow:
+        0 0 16px rgb(210 31 31 / 55%),
+        inset 0 1px 0 rgb(255 255 255 / 30%);
+    text-shadow: 0 0 8px rgb(255 120 100 / 70%);
+}
+
+.hal-agent[aria-pressed='true']::before {
+    border-color: #ffd0c8;
+    background: radial-gradient(circle at 38% 32%, #fff, #ff6a5a 55%, #d21f1f);
+    box-shadow:
+        0 0 10px 2px rgb(255 90 74 / 90%),
+        0 0 18px 4px rgb(210 31 31 / 55%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .hal-agent,
+    .hal-agent::before {
+        transition: none;
+    }
+}
+
 /* --- Grille principale ---------------------------------------------- */
 .hal-console__grid {
     display: grid;
@@ -283,6 +389,81 @@
     color: var(--hal-blue);
 }
 
+/* --- Télémétrie du modèle (nom, tokens, débit) ---------------------- */
+.hal-caution__telemetry {
+    flex-basis: 100%;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.5rem;
+    margin-top: 0.15rem;
+}
+
+@media (max-width: 640px) {
+    .hal-caution__telemetry {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+.hal-caution__item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid var(--hal-line);
+    border-radius: 4px;
+    background: rgb(255 255 255 / 55%);
+}
+
+.hal-caution__key {
+    font-family: var(--hal-font-display);
+    font-size: 0.5rem;
+    letter-spacing: 0.14em;
+    color: var(--hal-muted);
+}
+
+.hal-caution__value {
+    padding: 2px 6px;
+    font-family: var(--hal-font-mono);
+    font-size: 0.95rem;
+    line-height: 1;
+    letter-spacing: 0.06em;
+    color: var(--hal-green);
+    text-shadow: 0 0 6px rgb(125 255 176 / 55%);
+    border: 1px solid #000;
+    border-radius: 3px;
+    background: #14181b;
+    box-shadow: inset 0 0 10px rgb(0 0 0 / 85%);
+    transform-origin: left center;
+}
+
+.hal-caution__value--model {
+    overflow: hidden;
+    font-size: 0.72rem;
+    color: #fff;
+    text-shadow: 0 0 6px rgb(255 255 255 / 55%);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.hal-caution__value.is-updating {
+    animation: hal-value-pop 0.5s ease-out;
+}
+
+@keyframes hal-value-pop {
+    0% {
+        transform: scale(1);
+        filter: brightness(1);
+    }
+    35% {
+        transform: scale(1.12);
+        filter: brightness(1.6);
+    }
+    100% {
+        transform: scale(1);
+        filter: brightness(1);
+    }
+}
+
 .hal-lamp {
     width: 12px;
     height: 12px;
@@ -316,7 +497,7 @@
 .hal-eyepanel {
     display: flex;
     flex-direction: column;
-    align-items: center;
+    align-items: stretch;
     gap: 0.9rem;
 }
 
@@ -326,6 +507,7 @@
     font-size: 0.6rem;
     letter-spacing: 0.22em;
     color: var(--hal-muted);
+    text-align: center;
 }
 
 .hal-eye {
@@ -625,6 +807,7 @@
 
 .hal-switches {
     display: flex;
+    justify-content: center;
     gap: 0.6rem;
     margin-top: 0.3rem;
 }
@@ -672,6 +855,18 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
+}
+
+.hal-temp__slider {
+    appearance: none;
+    width: 100%;
+    height: 3px;
+    border: 1px solid var(--hal-line-strong);
+    border-radius: 2px;
+    background: linear-gradient(90deg, var(--hal-blue-soft), var(--hal-amber));
+    box-shadow: inset 0 1px 2px rgb(27 36 41 / 25%);
+    cursor: pointer;
+    margin-top: 0.25rem;
 }
 
 .hal-temp__row .hal-temp__slider {
@@ -742,18 +937,6 @@
 
 .hal-seg__colon::after {
     top: 62%;
-}
-
-.hal-temp__slider {
-    appearance: none;
-    width: 100%;
-    height: 3px;
-    border: 1px solid var(--hal-line-strong);
-    border-radius: 2px;
-    background: linear-gradient(90deg, var(--hal-blue-soft), var(--hal-amber));
-    box-shadow: inset 0 1px 2px rgb(27 36 41 / 25%);
-    cursor: pointer;
-    margin-top: 0.25rem;
 }
 
 .hal-temp__slider::-webkit-slider-thumb {
@@ -887,14 +1070,15 @@
     margin-bottom: 0;
 }
 
-/* Un bloc = une demande (vert) ou une réponse IA (ambre). */
+/* Un bloc = une demande (orange-jaune) ou une réponse IA (vert). */
 .hal-msg {
     margin-block: 0 0.4rem;
     white-space: pre-wrap;
 }
 
 .hal-msg--user {
-    color: var(--hal-green);
+    color: #ffb347;
+    text-shadow: 0 0 6px rgb(255 179 71 / 55%);
 }
 
 .hal-msg--ai {
@@ -1056,27 +1240,27 @@
     width: 100%;
     min-height: 3.2rem;
     padding: 0.6rem 0.75rem;
-    border: 1px solid rgb(125 255 176 / 35%);
+    border: 1px solid rgb(255 179 71 / 35%);
     border-radius: 5px;
     outline: none;
     resize: vertical;
     background: rgb(0 0 0 / 35%);
-    color: var(--hal-green);
-    caret-color: var(--hal-green);
-    text-shadow: 0 0 6px rgb(125 255 176 / 55%);
+    color: #ffb347;
+    caret-color: #ffb347;
+    text-shadow: 0 0 6px rgb(255 179 71 / 55%);
     font-family: var(--hal-font-mono);
     font-size: 1rem;
     line-height: 1.5;
 }
 
 .hal-terminal__input::placeholder {
-    color: rgb(125 255 176 / 32%);
+    color: rgb(255 179 71 / 32%);
     text-shadow: none;
 }
 
 .hal-terminal__input:focus-visible {
-    border-color: rgb(125 255 176 / 65%);
-    box-shadow: 0 0 0 1px rgb(125 255 176 / 45%);
+    border-color: rgb(255 179 71 / 65%);
+    box-shadow: 0 0 0 1px rgb(255 179 71 / 45%);
 }
 
 .hal-terminal__actions {
@@ -1262,5 +1446,9 @@
 
     .hal-console .hal-eye__words {
         display: none;
+    }
+
+    .hal-console .hal-caution__value.is-updating {
+        animation: none;
     }
 }

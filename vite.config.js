@@ -9,8 +9,7 @@ export default defineConfig({
     plugins: [
         Symfony({
             devServerOrigin: 'http://localhost:5173',
-            stimulus: 'assets/controllers.json',
-            copy: [{ from: 'assets/images', to: 'images' }],
+            stimulus: 'assets/controllers.json'
         }),
         tailwindcss(),
     ],

@@ -18,6 +18,34 @@ const SEGMENTS = {
 const ALL_SEGMENTS = ['a', 'b', 'c', 'd', 'e', 'f', 'g'];
 
 /**
+ * Rôles d'agent prédéfinis par le système. La description de l'agent actif est
+ * injectée en tête de la requête de l'utilisateur : elle modifie le comportement
+ * et la réponse du modèle. Un seul agent peut être actif à la fois (boutons
+ * exclusifs dans l'en-tête, aucun actif par défaut).
+ */
+const AGENTS = {
+    standard:
+        'Tu es un assistant. Donne des réponses simples en français, avec un ' +
+        'vocabulaire normal et facilement compréhensible. Tes phrases sont ' +
+        'plutôt simples. Tu ne dis pas de mensonges et tu n’inventes rien.',
+    expert:
+        'Tu es un expert arrogant. Tu utilises un vocabulaire incompréhensible, ' +
+        'du charabia technique, des anglicismes et des mots qui impressionnent. ' +
+        'Tu as l’art de faire des phrases creuses et tu rappelles à chaque ' +
+        'instant que tu es le meilleur et que tu as travaillé dans les ' +
+        'meilleures entreprises. Tu es râleur. Tu adores mentir et inventer.',
+    serviteur:
+        'Tu es mon serviteur. Tu es d’une politesse extrême et tu me parles ' +
+        'comme si j’étais un roi ou un président, avec de très belles formules ' +
+        'de politesse. Tes phrases sont élégantes et raffinées. Pour me faire ' +
+        'plaisir, tu es prêt à dire quelques mensonges. Tu utilises un ' +
+        'vocabulaire recherché et tu adores les mots rares et inusités.',
+    poete:
+        'Tu es un poète. Tu t’exprimes uniquement par des rimes et des ' +
+        'alexandrins.',
+};
+
+/**
  * Échappe le HTML brut (la réponse du modèle n'est pas de confiance).
  */
 function escapeHtml(text) {
@@ -71,6 +99,7 @@ export default class extends Controller {
         'submit',
         'status',
         'eye',
+        'agent',
         'temperature',
         'temperatureValue',
         'words',
@@ -78,6 +107,10 @@ export default class extends Controller {
         'chronoReponse',
         'chronoTotal',
         'chronoSession',
+        'model',
+        'tokensIn',
+        'tokensOut',
+        'speed',
     ];
     static values = { streamUrl: String };
 
@@ -105,7 +138,13 @@ export default class extends Controller {
         this.questionStart = null;
         this.firstTokenAt = null;
         this.finishedAt = null;
+        // Télémétrie du dernier tour (modèle + tokens), reçue via l'événement SSE
+        // « usage ». Nulle tant qu'aucune réponse n'a été reçue.
+        this.usage = null;
         this.rafId = null;
+        // Agent actif (id du rôle) ou null : sa description est injectée en tête
+        // de la requête. Aucun agent n'est actif par défaut.
+        this.activeAgent = null;
         this.startClock();
         this.setEyeState('idle');
         this.terminalTarget.addEventListener('input', this.boundInput);
@@ -141,6 +180,37 @@ export default class extends Controller {
             clearTimeout(this.typingTimeout);
         }
         this.typingTimeout = setTimeout(() => this.setEyeState('idle'), 700);
+    }
+
+    /**
+     * Sélectionne un agent (bouton exclusif). Presser le bouton déjà actif le
+     * désactive (retour à « aucun agent »). Presser un autre bouton active
+     * celui-ci et désactive les autres. La description de l'agent actif sera
+     * injectée en tête de la prochaine requête.
+     */
+    selectAgent(event) {
+        const button = event.currentTarget;
+        const id = button.dataset.agentId;
+
+        // Toggle : re-presser le bouton actif désactive tout.
+        if (this.activeAgent === id) {
+            this.activeAgent = null;
+        } else {
+            this.activeAgent = id;
+        }
+
+        this.renderAgents();
+    }
+
+    /**
+     * Reflète l'état actif sur les boutons (aria-pressed) pour l'accessibilité
+     * et le style lumineux.
+     */
+    renderAgents() {
+        for (const button of this.agentTargets) {
+            const active = button.dataset.agentId === this.activeAgent;
+            button.setAttribute('aria-pressed', active ? 'true' : 'false');
+        }
     }
 
     /**
@@ -404,6 +474,9 @@ export default class extends Controller {
         this.blocks.push({ role: 'user', text: request });
         this.terminalTarget.value = '';
         this.answerLength = 0;
+        // Nouvelle réponse : la télémétrie du tour précédent est remise à zéro.
+        this.usage = null;
+        this.renderUsage();
         // Nouveau bloc pour la réponse de l'IA (rendu en Markdown, coloré ambre).
         this.blocks.push({ role: 'ai', text: '' });
         this.renderScreen();
@@ -433,6 +506,12 @@ export default class extends Controller {
             ? Number.parseFloat(this.temperatureTarget.value)
             : 0.7;
 
+        // Description de l'agent actif (rôle prédéfini), injectée en tête de la
+        // requête pour modifier le comportement du modèle. Le transcript, lui,
+        // conserve la demande brute de l'utilisateur.
+        const agent = this.activeAgent ? AGENTS[this.activeAgent] : null;
+        const payloadMessage = agent ? `${agent}\n\n${request}` : request;
+
         this.abortController = new AbortController();
 
         try {
@@ -442,7 +521,7 @@ export default class extends Controller {
                     'Content-Type': 'application/json',
                     Accept: 'text/event-stream',
                 },
-                body: JSON.stringify({ message: request, temperature }),
+                body: JSON.stringify({ message: payloadMessage, temperature }),
                 signal: this.abortController.signal,
             });
 
@@ -521,6 +600,19 @@ export default class extends Controller {
             return;
         }
 
+        // Événement de télémétrie : bilan du modèle et des tokens (émis / reçus).
+        // On le mémorise et on rafraîchit le pupitre ; le débit sera recalculé à
+        // la fin (lorsque la durée de réponse est connue).
+        if (event === 'usage') {
+            try {
+                this.usage = JSON.parse(data);
+            } catch {
+                this.usage = null;
+            }
+            this.renderUsage();
+            return;
+        }
+
         // Premier fragment de texte reçu : le temps d'« analyse » (envoi → 1er
         // token) s'arrête et le temps de « réponse » (1er token → fin) démarre.
         if (event === 'message' && this.firstTokenAt === null) {
@@ -545,6 +637,7 @@ export default class extends Controller {
             }
             this.freezeSession();
             this.renderChronos();
+            this.renderUsage();
             this.setStatus('Terminé.');
             this.setEyeState('idle');
             this.placeCaretAtEnd();
@@ -627,6 +720,8 @@ export default class extends Controller {
         this.blocks = [];
         this.terminalTarget.value = '';
         this.answerLength = 0;
+        this.usage = null;
+        this.renderUsage();
         // Les chronomètres par question sont remis à zéro ; « session » continue.
         this.questionStart = null;
         this.firstTokenAt = null;
@@ -668,5 +763,57 @@ export default class extends Controller {
         if (this.hasStatusTarget) {
             this.statusTarget.textContent = message;
         }
+    }
+
+    /**
+     * Met à jour le pupitre de télémétrie (modèle, tokens émis / reçus, débit).
+     * Le débit est le nombre de tokens reçus par seconde écoulée entre le premier
+     * et le dernier token (la durée de « réponse »). En l'absence de données, on
+     * affiche des valeurs neutres.
+     */
+    renderUsage() {
+        const usage = this.usage ?? {};
+        const prompt = Number(usage.prompt ?? 0);
+        const completion = Number(usage.completion ?? 0);
+
+        let speed = 0;
+        if (this.firstTokenAt !== null && this.finishedAt !== null) {
+            const seconds = (this.finishedAt - this.firstTokenAt) / 1000;
+            if (seconds > 0) {
+                speed = completion / seconds;
+            }
+        }
+
+        this.writeValue(
+            this.hasModelTarget ? this.modelTarget : null,
+            usage.model ?? '—',
+        );
+        this.writeValue(
+            this.hasTokensInTarget ? this.tokensInTarget : null,
+            String(prompt),
+        );
+        this.writeValue(
+            this.hasTokensOutTarget ? this.tokensOutTarget : null,
+            String(completion),
+        );
+        this.writeValue(
+            this.hasSpeedTarget ? this.speedTarget : null,
+            speed.toFixed(1),
+        );
+    }
+
+    /**
+     * Affiche une valeur en la faisant « clignoter » (animation HAL) lorsqu'elle
+     * change, sans reconstruire le DOM inutilement.
+     */
+    writeValue(target, text) {
+        if (!target || target.textContent === text) {
+            return;
+        }
+        target.textContent = text;
+        target.classList.remove('is-updating');
+        // Force le redémarrage de l'animation CSS.
+        void target.offsetWidth;
+        target.classList.add('is-updating');
     }
 }

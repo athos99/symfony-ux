@@ -55,6 +55,7 @@ export function generateCsrfToken(formElement) {
 
     if (csrfCookie && tokenCheck.test(csrfToken)) {
         const cookie = `${csrfCookie}_${csrfToken}=${csrfCookie}; path=/; samesite=strict`;
+        // biome-ignore lint/suspicious/noDocumentCookie: intentional cookie manipulation for Symfony CSRF protection
         document.cookie =
             window.location.protocol === 'https:'
                 ? `__Host-${cookie}; secure`
@@ -95,6 +96,7 @@ export function removeCsrfToken(formElement) {
     if (tokenCheck.test(csrfField.value) && nameCheck.test(csrfCookie)) {
         const cookie = `${csrfCookie}_${csrfField.value}=0; path=/; samesite=strict; max-age=0`;
 
+        // biome-ignore lint/suspicious/noDocumentCookie: intentional cookie manipulation for Symfony CSRF protection
         document.cookie =
             window.location.protocol === 'https:'
                 ? `__Host-${cookie}; secure`

@@ -65,6 +65,20 @@ final class TestAiControllerTest extends WebTestCase
         self::assertSelectorExists('output[data-test-ai-target="temperatureValue"]');
     }
 
+    public function testPageRendersAgentSelectorButtons(): void
+    {
+        $client = self::createClient();
+        $client->request('GET', '/test_ai');
+
+        // Le sélecteur d'agent de l'en-tête expose un bouton par rôle prédéfini,
+        // tous inactifs par défaut (aria-pressed="false").
+        foreach (['standard', 'expert', 'serviteur', 'poete'] as $id) {
+            self::assertSelectorExists(
+                sprintf('button[data-test-ai-target="agent"][data-agent-id="%s"][aria-pressed="false"]', $id),
+            );
+        }
+    }
+
     public function testPageRendersFourChronometersInitialisedToZero(): void
     {
         $client = self::createClient();
@@ -81,6 +95,20 @@ final class TestAiControllerTest extends WebTestCase
                 '00:00:00.00',
             );
         }
+    }
+
+    public function testPageRendersModelTelemetryInFooter(): void
+    {
+        $client = self::createClient();
+        $client->request('GET', '/test_ai');
+
+        // La télémétrie (modèle, tokens émis / reçus, débit) est logée dans le
+        // pied de page, initialisée à des valeurs neutres.
+        self::assertSelectorExists('.hal-footer .hal-caution__telemetry');
+        self::assertSelectorTextContains('[data-test-ai-target="model"]', '—');
+        self::assertSelectorTextContains('[data-test-ai-target="tokensIn"]', '0');
+        self::assertSelectorTextContains('[data-test-ai-target="tokensOut"]', '0');
+        self::assertSelectorTextContains('[data-test-ai-target="speed"]', '0.0');
     }
 
     #[\PHPUnit\Framework\Attributes\DataProvider('temperatureProvider')]
@@ -150,5 +178,44 @@ final class TestAiControllerTest extends WebTestCase
         self::assertStringContainsString('event: done', $body);
         self::assertStringContainsString('turbo-stream', $body);
         self::assertStringContainsString('Bonjour, monde !', $body);
+    }
+
+    public function testStreamEndpointEmitsUsageTelemetry(): void
+    {
+        $kernel = self::bootKernel();
+        $request = Request::create(
+            '/test_ai/stream',
+            'POST',
+            [],
+            [],
+            [],
+            ['CONTENT_TYPE' => 'application/json'],
+            (string) json_encode(['message' => 'Bonjour']),
+        );
+
+        $response = $kernel->handle($request);
+        ob_start();
+        $response->sendContent();
+        $body = (string) ob_get_clean();
+
+        // L'événement « usage » transporte le modèle et le bilan des tokens.
+        self::assertStringContainsString('event: usage', $body);
+
+        $usage = null;
+        foreach (explode("\n\n", $body) as $chunk) {
+            if (str_contains($chunk, 'event: usage')) {
+                foreach (explode("\n", $chunk) as $line) {
+                    if (str_starts_with($line, 'data:')) {
+                        $usage = json_decode(substr($line, 5), true);
+                    }
+                }
+            }
+        }
+
+        self::assertIsArray($usage);
+        self::assertSame('openrouter/auto', $usage['model']);
+        self::assertSame(12, $usage['prompt']);
+        self::assertSame(34, $usage['completion']);
+        self::assertSame(46, $usage['total']);
     }
 }

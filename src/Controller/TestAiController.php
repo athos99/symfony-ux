@@ -8,6 +8,7 @@ use Symfony\AI\Agent\AgentInterface;
 use Symfony\AI\Platform\Message\Message;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
+use Symfony\AI\Platform\TokenUsage\TokenUsageInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\EventStreamResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -85,6 +86,7 @@ final class TestAiController extends AbstractController
             // pour rester dans un budget raisonnable et éviter les erreurs 402
             // des plateformes à crédits limités. La température est transmise
             // telle quelle au modèle (option standard de Symfony AI).
+            $execution = null;
             try {
                 $execution = $default->call($messages, [
                     'stream' => true,
@@ -123,6 +125,18 @@ final class TestAiController extends AbstractController
                     'message',
                 );
             }
+
+            // Télémétrie finale : modèle employé et bilan des tokens (émis = prompt,
+            // reçus = complétion). Ces métadonnées sont agrégées par la plateforme
+            // pendant la consommation du flux et exposées via getMetadata(). Le client
+            // en déduit le débit (tokens reçus par seconde) à partir de ses chronomètres.
+            $tokenUsage = $execution?->getMetadata()->get('token_usage');
+            yield new ServerEvent((string) json_encode([
+                'model' => $tokenUsage instanceof TokenUsageInterface ? $tokenUsage->getModel() : null,
+                'prompt' => $tokenUsage instanceof TokenUsageInterface ? $tokenUsage->getPromptTokens() : null,
+                'completion' => $tokenUsage instanceof TokenUsageInterface ? $tokenUsage->getCompletionTokens() : null,
+                'total' => $tokenUsage instanceof TokenUsageInterface ? $tokenUsage->getTotalTokens() : null,
+            ]), 'usage');
 
             // Événement final : marque la fin du streaming côté client.
             yield new ServerEvent(

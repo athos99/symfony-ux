@@ -154,6 +154,30 @@ Le `textarea#ai-terminal` sert à la fois d'entrée (demande) et d'affichage
 (demande + réponse). À l'envoi, Stimulus y écrit la demande, puis recopie en
 direct le contenu de `#ai-output` (la réponse cumulée poussée par Turbo).
 
+## 5ter. Sélecteur d'agent (rôles prédéfinis)
+
+Dans la zone d'en-tête, une rangée de boutons-poussoirs lumineux (style HAL 2000)
+permet de choisir un **agent** parmi des rôles prédéfinis par le système :
+
+| Agent | Comportement |
+| --- | --- |
+| **Standard** | Réponses simples en français, vocabulaire normal, phrases simples, ne ment pas. |
+| **Expert** | Arrogant, charabia technique, anglicismes, phrases creuses, se vante, râleur, ment et invente. |
+| **Serviteur** | Politesse extrême, formules raffinées, vocabulaire recherché, prêt à mentir pour plaire. |
+| **Poète** | S'exprime uniquement par des rimes et des alexandrins. |
+
+Fonctionnement :
+
+- Les descriptions des agents sont définies dans la constante `AGENTS` du
+  contrôleur Stimulus (`assets/controllers/test-ai_controller.js`).
+- Les boutons sont **exclusifs** : un seul peut être actif à la fois. Presser le
+  bouton actif le désactive (retour à « aucun agent ») ; presser un autre bouton
+  active celui-ci et désactive les autres. Aucun n'est actif par défaut.
+- L'état actif est porté par `aria-pressed` (accessibilité + style lumineux).
+- À l'envoi, la description de l'agent actif est **injectée en tête de la
+  requête** (`description + « \n\n » + demande`) : elle modifie le comportement
+  et la réponse du modèle. Le transcript, lui, conserve la demande brute.
+
 ## 5bis. Chronomètres (afficheurs 7 segments)
 
 Sous l'indicateur `#ai-status`, quatre chronomètres à affichage digital
